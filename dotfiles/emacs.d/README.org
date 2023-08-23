@@ -135,7 +135,7 @@ file uses lexical scoping.
 #+BEGIN_SRC emacs-lisp
 (use-package auto-compile
   :demand t
-  :straight t
+  :elpaca t
   :config
   (progn
     (auto-compile-on-load-mode)
@@ -357,14 +357,7 @@ but provide support for writing custom elisp.
 #+BEGIN_SRC emacs-lisp
 (use-package gh
   :defer t
-  :straight (gh :type git :host github :repo "IvanMalison/gh.el"))
-#+END_SRC
-*** shut-up
-#+BEGIN_SRC emacs-lisp
-(use-package shut-up
-  :config
-  (defun imalison:shut-up-around (function &rest args)
-    (shut-up (apply function args))))
+  :elpaca (gh :type git :host github :repo "IvanMalison/gh.el"))
 #+END_SRC
 *** parse-csv
 #+BEGIN_SRC emacs-lisp
@@ -374,7 +367,7 @@ but provide support for writing custom elisp.
 *** emit
 #+BEGIN_SRC emacs-lisp
 (use-package emit
-  :straight (emit :type git :host github :repo "IvanMalison/emit"))
+  :elpaca (emit :type git :host github :repo "IvanMalison/emit"))
 #+END_SRC
 *** request
 #+BEGIN_SRC emacs-lisp
@@ -718,39 +711,42 @@ This interactive functions allows the user the select a function to invoke using
 #+END_SRC
 ** Custom ~shell-command-on-region~
 #+BEGIN_SRC emacs-lisp
-(defun imalison:copy-shell-command-on-region (start end command)
-  (interactive (list (region-beginning) (region-end)
-                     (read-shell-command "Shell command on region: ")))
-  (let ((original-buffer (current-buffer)))
-    (with-temp-buffer
-      (let ((temp-buffer (current-buffer)))
-        (with-current-buffer original-buffer
-          (shell-command-on-region start end command temp-buffer))
-        (let ((min (point-min))
-              (max (point-max)))
-          (kill-ring-save min max)
-          (buffer-substring min max))))))
+  (defun imalison:copy-shell-command-on-region (start end command)
+	(interactive (list (region-beginning) (region-end)
+					   (read-shell-command "Shell command on region: ")))
+	(let ((original-buffer (current-buffer)))
+	  (with-temp-buffer
+		(let ((temp-buffer (current-buffer)))
+		  (with-current-buffer original-buffer
+			(shell-command-on-region start end command temp-buffer))
+		  (let ((min (point-min))
+				(max (point-max)))
+			(kill-ring-save min max)
+			(buffer-substring min max))))))
 
-(defun region-if-active-otherwise-buffer ()
-  (if (region-active-p)
-      (list (region-beginning) (region-end))
-    (list (buffer-end -1) (buffer-end 1))))
+  (defun region-if-active-otherwise-buffer ()
+	(if (region-active-p)
+		(list (region-beginning) (region-end))
+	  (list (buffer-end -1) (buffer-end 1))))
 
-(region-if-active-otherwise-buffer)
+  (region-if-active-otherwise-buffer)
 
-(defun imalison:shell-command-on-region-replace (start end command)
-  (interactive (list (region-beginning) (region-end)
-                     (read-shell-command "Shell command on region: ")))
-  (shell-command-on-region start end command nil t))
+  (defun imalison:shell-command-on-region-replace (start end command)
+	(interactive (list (region-beginning) (region-end)
+					   (read-shell-command "Shell command on region: ")))
+	(shell-command-on-region start end command nil t))
 
-(emit-prefix-selector imalison:shell-command-on-region
-  imalison:copy-shell-command-on-region
-  imalison:shell-command-on-region-replace
-  imalison:jq-replace)
+  (use-package emit
+	:commands imalison:shell-command-on-region
+	:config
+	(emit-prefix-selector imalison:shell-command-on-region
+	  imalison:copy-shell-command-on-region
+	  imalison:shell-command-on-region-replace
+	  imalison:jq-replace))
 
-(defun imalison:jq-replace (start end)
-  (interactive (region-if-active-otherwise-buffer))
-  (imalison:shell-command-on-region-replace start end "jq ."))
+  (defun imalison:jq-replace (start end)
+	(interactive (region-if-active-otherwise-buffer))
+	(imalison:shell-command-on-region-replace start end "jq ."))
 
 #+END_SRC
 ** Copy/Yank String Functions
@@ -858,26 +854,27 @@ A macro for composing functions together to build an interactive command to copy
 the path variable for this work. Check out my [[exec-path-from-shell][exec-path-from-shell]] config for
 details.
 #+BEGIN_SRC emacs-lisp
-(defun imalison:get-executables-at-path (filepath)
-  (when (and (file-exists-p filepath) (f-directory? filepath))
-    (--filter (let ((fullpath (imalison:join-paths filepath it)))
-                (and (file-executable-p fullpath)
-                     (not (f-directory? fullpath))))
-              (directory-files filepath))))
+  (defun imalison:get-executables-at-path (filepath)
+    (when (and (file-exists-p filepath) (f-directory? filepath))
+      (--filter (let ((fullpath (imalison:join-paths filepath it)))
+		  (and (file-executable-p fullpath)
+		       (not (f-directory? fullpath))))
+		(directory-files filepath))))
 
-(use-package eshell
-  :commands (eshell-parse-colon-path imalison:get-executables-on-path)
-  :config
-  (defun imalison:get-executables-on-path ()
-    (mapcan 'imalison:get-executables-at-path
-            (eshell-parse-colon-path (getenv "PATH")))))
+  (use-package eshell
+    :elpaca nil
+    :commands (eshell-parse-colon-path imalison:get-executables-on-path)
+    :config
+    (defun imalison:get-executables-on-path ()
+      (mapcan 'imalison:get-executables-at-path
+	      (eshell-parse-colon-path (getenv "PATH")))))
 
-(defun imalison:edit-script ()
-  (interactive)
-  (find-file
-   (executable-find
-    (completing-read "Select a script to edit: "
-                     (imalison:get-executables-on-path)))))
+  (defun imalison:edit-script ()
+    (interactive)
+    (find-file
+     (executable-find
+      (completing-read "Select a script to edit: "
+		       (imalison:get-executables-on-path)))))
 #+END_SRC
 ** Toggle lexical binding in the current buffer
 #+BEGIN_SRC emacs-lisp
@@ -1026,9 +1023,12 @@ I keep it around just in case I need it.
 #+END_SRC
 
 #+BEGIN_SRC emacs-lisp
-;; TODO: fix
-(emit-prefix-selector imalison:mark-ring
-  mark-ring)
+
+  (use-package emit
+	:demand t
+		  :config
+		  (emit-prefix-selector imalison:mark-ring
+			mark-ring))
 #+END_SRC
 ** Keyboard Macros
 *** For editing literate config
@@ -1163,17 +1163,17 @@ Disabling line numbers because they are slow as fuck.
 #+END_SRC
 *** frame-mode
 #+BEGIN_SRC emacs-lisp
-(defvar imalison:use-frame-mode
-  (s-contains? "xmonad" (shell-command-to-string "wmctrl -m")))
+  (defvar imalison:use-frame-mode
+    (not (null (string-match "xmonad" (shell-command-to-string "wmctrl -m")))))
 
-(use-package frame-mode
-  :if imalison:use-frame-mode
-  :demand t
-  :config
-  (progn
-    (add-hook 'frame-mode-hook (lambda () (display-time-mode -1)))
-    (frame-mode +1)
-    (frame-keys-mode +1)))
+  (use-package frame-mode
+    :if imalison:use-frame-mode
+    :demand t
+    :config
+    (progn
+      (add-hook 'frame-mode-hook (lambda () (display-time-mode -1)))
+      (frame-mode +1)
+      (frame-keys-mode +1)))
 #+END_SRC
 *** Handle xrefs annoying dedicated window garbage
 #+BEGIN_SRC emacs-lisp
@@ -1258,16 +1258,17 @@ This makes ~forward-word~ and ~backward-word~ understand snake and camel case.
 ** proced
 proced is an top like utility that runs inside of emacs. The following sets auto updating automatically and makes the update interval faster.
 #+BEGIN_SRC emacs-lisp
-(use-package proced
-  :defer t
-  :config
-  (progn
-    (setq proced-auto-update-interval 1)
-    (add-hook 'proced-mode-hook (lambda () (proced-toggle-auto-update +1)))))
+  (use-package proced
+    :elpaca nil
+    :defer t
+    :config
+    (progn
+      (setq proced-auto-update-interval 1)
+      (add-hook 'proced-mode-hook (lambda () (proced-toggle-auto-update +1)))))
 #+END_SRC
 ** Set epa program
 #+BEGIN_SRC emacs-lisp
-(setq epg-gpg-program "gpg")
+
 #+END_SRC
 ** Make files executable
 #+BEGIN_SRC emacs-lisp
@@ -1343,18 +1344,6 @@ proced is an top like utility that runs inside of emacs. The following sets auto
 ;; (add-hook 'prog-mode-hook (lambda () (highlight-lines-matching-regexp
 ;;                                  ".\\{81\\}" 'hi-blue)))
 #+END_SRC
-** paradox
-Paradox is a package.el extension. I have no use for it now that I use straight.el.
-#+BEGIN_SRC emacs-lisp
-(use-package paradox
-  :disabled t
-  :commands (paradox-upgrade-packages paradox-list-packages)
-  :config
-  (progn
-    (require 'gh)
-    (setq paradox-execute-asynchronously t
-          paradox-github-token (gh-auth-get-oauth-token))))
-#+END_SRC
 ** gcmh
 #+begin_src emacs-lisp
 (use-package gcmh
@@ -1399,31 +1388,32 @@ Paradox is a package.el extension. I have no use for it now that I use straight.
 #+END_SRC
 ** server
 #+BEGIN_SRC emacs-lisp
-(use-package server
-  :demand t
-  :config
-  (progn
-  (setq server-use-tcp nil)
-    (defvar imalison:default-server-file
-      (imalison:join-paths user-emacs-directory "server" "server"))
-    (defun imalison:main-emacs-server-name ()
-      (file-name-nondirectory
-       (file-truename imalison:default-server-file)))
-    (defun imalison:make-main-emacs-server ()
-      (interactive)
-      (unless (string-equal server-name (imalison:main-emacs-server-name))
-        (if (string-equal server-name "server")
-              (error "Unable to set main server name 'server'.
-The file server file for this emacs instance no longer exists.")
-          (progn
-            (delete-file imalison:default-server-file)
-            (make-symbolic-link (imalison:join-paths user-emacs-directory "server" server-name)
-                                imalison:default-server-file)))))
-    (defun imalison:get-this-server-filepath ()
-      (let ((server-dir (if server-use-tcp server-auth-dir server-socket-dir)))
-        (expand-file-name server-name server-dir)))
-    (when (equal nil (server-running-p)) (server-start)
-          (imalison:make-main-emacs-server))))
+  (use-package server
+	:elpaca nil
+	:demand t
+	:config
+	(progn
+	(setq server-use-tcp nil)
+	  (defvar imalison:default-server-file
+		(imalison:join-paths user-emacs-directory "server" "server"))
+	  (defun imalison:main-emacs-server-name ()
+		(file-name-nondirectory
+		 (file-truename imalison:default-server-file)))
+	  (defun imalison:make-main-emacs-server ()
+		(interactive)
+		(unless (string-equal server-name (imalison:main-emacs-server-name))
+		  (if (string-equal server-name "server")
+				(error "Unable to set main server name 'server'.
+  The file server file for this emacs instance no longer exists.")
+			(progn
+			  (delete-file imalison:default-server-file)
+			  (make-symbolic-link (imalison:join-paths user-emacs-directory "server" server-name)
+								  imalison:default-server-file)))))
+	  (defun imalison:get-this-server-filepath ()
+		(let ((server-dir (if server-use-tcp server-auth-dir server-socket-dir)))
+		  (expand-file-name server-name server-dir)))
+	  (when (equal nil (server-running-p)) (server-start)
+			(imalison:make-main-emacs-server))))
 #+END_SRC
 ** list-environment
 #+BEGIN_SRC emacs-lisp
@@ -1470,16 +1460,17 @@ The file server file for this emacs instance no longer exists.")
 #+END_SRC
 ** winner
 #+BEGIN_SRC emacs-lisp
-(use-package winner
-  :commands (winner-undo winner-redo)
-  :bind ("C-c q" . imalison:winner-hydra/body)
-  :config
-  (progn
-    (defhydra imalison:winner-hydra ()
-      "Winner"
-      ("p" winner-undo "back")
-      ("n" winner-redo "forward" :exit t))
-    (winner-mode 1)))
+  (use-package winner
+    :elpaca nil
+	:commands (winner-undo winner-redo)
+	:bind ("C-c q" . imalison:winner-hydra/body)
+	:config
+	(progn
+	  (defhydra imalison:winner-hydra ()
+		"Winner"
+		("p" winner-undo "back")
+		("n" winner-redo "forward" :exit t))
+	  (winner-mode 1)))
 #+END_SRC
 ** eyebrowse
 I don't have any use for this now that I use frames mode, but its an interesting idea.
@@ -1557,14 +1548,15 @@ Man page escape sequences aren't properly handled by emacs pager. This function
 fixes that, but for now, it needs to be run manually, since I haven't figured
 out how to detect that a buffer is a man mode buffer.
 #+BEGIN_SRC emacs-lisp
-(use-package man
-  :config
-  (progn
-    (defun imalison:fontify-man-page-buffer ()
-      (interactive)
-      (read-only-mode -1)
-      (Man-fontify-manpage)
-      (read-only-mode +1))))
+  (use-package man
+	:elpaca nil
+	:config
+	(progn
+	  (defun imalison:fontify-man-page-buffer ()
+		(interactive)
+		(read-only-mode -1)
+		(Man-fontify-manpage)
+		(read-only-mode +1))))
 #+END_SRC
 ** treesit
 *** treesit-auto
@@ -1783,56 +1775,57 @@ bind-key and global-set-key forms.
 #+END_SRC
 ** projectile
 #+BEGIN_SRC emacs-lisp
-(use-package projectile
-  :demand t
-  :bind (:map projectile-mode-map
-              ("C-c p f" . imalison:projectile-find-file)
-              ("C-c p" . projectile-command-map)
-              ("C-c p s" . imalison:do-rg)
-              ("C-c p f" . imalison:projectile-find-file))
-  :custom
-  ((projectile-require-project-root nil)
-   (projectile-enable-caching nil)
-   (projectile-git-submodule-command nil)
-   (project-vc-merge-submodules nil)
-   (projectile-current-project-on-switch 'keep))
-  :preface
-  (progn
-    (defmacro imalison:projectile-do-in-project (project-dir &rest forms)
-      `(imalison:with-default-directory ,project-dir
-                                        (noflet ((projectile-project-root (&rest args) ,project-dir))
-                                          ,@forms)))
+  (use-package projectile
+	:demand t
+	:after emit
+	:bind (:map projectile-mode-map
+				("C-c p f" . imalison:projectile-find-file)
+				("C-c p" . projectile-command-map)
+				("C-c p s" . imalison:do-rg)
+				("C-c p f" . imalison:projectile-find-file))
+	:custom
+	((projectile-require-project-root nil)
+	 (projectile-enable-caching nil)
+	 (projectile-git-submodule-command nil)
+	 (project-vc-merge-submodules nil)
+	 (projectile-current-project-on-switch 'keep))
+	:preface
+	(progn
+	  (defmacro imalison:projectile-do-in-project (project-dir &rest forms)
+		`(imalison:with-default-directory ,project-dir
+										  (noflet ((projectile-project-root (&rest args) ,project-dir))
+											,@forms)))
 
-    (defmacro imalison:with-default-directory (directory &rest forms)
-      `(let ((default-directory ,directory))
-         ,@forms))
+	  (defmacro imalison:with-default-directory (directory &rest forms)
+		`(let ((default-directory ,directory))
+		   ,@forms))
 
-    (defun imalison:do-rg-default-directory (&rest args)
-      (interactive)
-      (apply 'consult-ripgrep default-directory args))
+	  (defun imalison:do-rg-default-directory (&rest args)
+		(interactive)
+		(apply 'consult-ripgrep default-directory args))
 
-    (emit-prefix-selector imalison:do-rg
-      consult-ripgrep
-      imalison:do-rg-default-directory)
+	  (emit-prefix-selector imalison:do-rg
+		consult-ripgrep
+		imalison:do-rg-default-directory)
 
-    (emit-prefix-selector imalison:projectile-find-file
-      projectile-find-file
-      projectile-find-file-other-window)
+	  (emit-prefix-selector imalison:projectile-find-file
+		projectile-find-file
+		projectile-find-file-other-window)
 
-    (imalison:let-around imalison:set-options-do-rg
-      imalison:do-rg)
+	  (imalison:let-around imalison:set-options-do-rg
+		imalison:do-rg)
 
-    (defun imalison:projectile-make-all-subdirs-projects (directory)
-      (cl-loop for file-info in (directory-files-and-attributes directory)
-               do (when (nth 1 file-info)
-                    (write-region "" nil
-                                  (expand-file-name
-                                   (concat directory "/"
-                                           (nth 0 file-info) "/.projectile")))))))
-  :config
-  (progn
-    (projectile-global-mode)
-    (diminish 'projectile-mode)))
+	  (defun imalison:projectile-make-all-subdirs-projects (directory)
+		(cl-loop for file-info in (directory-files-and-attributes directory)
+				 do (when (nth 1 file-info)
+					  (write-region "" nil
+									(expand-file-name
+									 (concat directory "/"
+											 (nth 0 file-info) "/.projectile")))))))
+	:config
+	(progn
+	  (projectile-global-mode)
+	  (diminish 'projectile-mode)))
 #+END_SRC
 ** ido
 #+BEGIN_SRC emacs-lisp
@@ -1929,7 +1922,7 @@ Neotree is useless with frame mode for now, so I've disabled it.
       (let ((extension-symbol (intern (concat "vertico-" (symbol-name extension-name)))))
         `(use-package ,extension-symbol
            :after vertico
-           :straight (,extension-symbol
+           :elpaca (,extension-symbol
                       :repo "emacs-straight/vertico"
                       :host github
                       :files ,(list (concat "extensions/" (symbol-name extension-symbol) ".el")))
@@ -2235,31 +2228,32 @@ I don't use auto-complete at all, so I have set up a hook to automatically disab
 #+END_SRC
 ** align
 #+BEGIN_SRC emacs-lisp
-(use-package align
-  :bind ("C-c C-a" . imalison:align-regexp-hydra/body)
-  :config
-  (progn
-    (require 'hydra)
-    (defun imalison:complex-align-regexp ()
-      (interactive)
-      (let ((current-prefix-arg t))
-        (call-interactively 'align-regexp)))
-    (defun imalison:align-whitespace ()
-      (interactive)
-      (align-regexp
-       (region-beginning) (region-end)
-       "\\(\\s-+\\)") 0 1 t)
-    (defun imalison:align-to-character (character)
-      (interactive
-       (list (read-string "Character to align to " "=")))
-      (align-regexp
-       (region-beginning) (region-end)
-       (format "\\(\\s-*\\)%s" character) 1 1 nil))
-    (defhydra imalison:align-regexp-hydra ()
-      "align-regexp"
-      ("r" imalison:complex-align-regexp)
-      ("SPC" imalison:align-whitespace)
-      ("c" imalison:align-to-character))))
+  (use-package align
+	:elpaca nil
+	:bind ("C-c C-a" . imalison:align-regexp-hydra/body)
+	:config
+	(progn
+	  (require 'hydra)
+	  (defun imalison:complex-align-regexp ()
+		(interactive)
+		(let ((current-prefix-arg t))
+		  (call-interactively 'align-regexp)))
+	  (defun imalison:align-whitespace ()
+		(interactive)
+		(align-regexp
+		 (region-beginning) (region-end)
+		 "\\(\\s-+\\)") 0 1 t)
+	  (defun imalison:align-to-character (character)
+		(interactive
+		 (list (read-string "Character to align to " "=")))
+		(align-regexp
+		 (region-beginning) (region-end)
+		 (format "\\(\\s-*\\)%s" character) 1 1 nil))
+	  (defhydra imalison:align-regexp-hydra ()
+		"align-regexp"
+		("r" imalison:complex-align-regexp)
+		("SPC" imalison:align-whitespace)
+		("c" imalison:align-to-character))))
 #+END_SRC
 * flycheck
 #+BEGIN_SRC emacs-lisp
@@ -2284,16 +2278,10 @@ I don't use auto-complete at all, so I have set up a hook to automatically disab
 	  (global-flycheck-mode))
 	:diminish flycheck-mode)
 #+END_SRC
-* straight
-#+BEGIN_SRC emacs-lisp
-(use-package straight
-  :config
-  (setq straight-vc-git-auto-fast-forward t))
-#+END_SRC
 * auth-source
 #+begin_src emacs-lisp
 (use-package auth-source
-  :straight nil
+  :elpaca nil
   :config
   (progn
     (setq auth-sources '("~/.authinfo.gpg"))))
@@ -2478,18 +2466,19 @@ For some reason ~find-function~ doesn't allow to ~display-buffer~ to do what
 it's supposed to do, but instead uses its own collection of functions to control
 where the definition is popped up. This fixes that.
 #+BEGIN_SRC emacs-lisp
-(use-package find-func
-  :preface
-  (progn
-    (defun imalison:find-function-display-buffer (function)
-      (interactive (find-function-read))
-      (find-function-do-it function nil 'display-buffer)))
-  :config
-  (advice-add 'find-function :override 'imalison:find-function-display-buffer))
+  (use-package find-func
+	:elpaca nil
+	:preface
+	(progn
+	  (defun imalison:find-function-display-buffer (function)
+		(interactive (find-function-read))
+		(find-function-do-it function nil 'display-buffer)))
+	:config
+	(advice-add 'find-function :override 'imalison:find-function-display-buffer))
 
-(defun imalison:find-function-display-buffer (function)
-  (interactive (find-function-read))
-  (find-function-do-it function nil 'pop-to-buffer))
+  (defun imalison:find-function-display-buffer (function)
+	(interactive (find-function-read))
+	(find-function-do-it function nil 'pop-to-buffer))
 #+END_SRC
 **** macrostep
 Macrostep is an indespensible tool for writing emacs lisp macros. It lets you see pretty printed versions of the result of macro evaluation as the macro is evaluated
@@ -2518,10 +2507,11 @@ Reduce indentation for some functions
 #+END_SRC
 **** edebug
 #+BEGIN_SRC emacs-lisp
-(use-package edebug
-  :defer t
-  :config
-  (progn (setq edebug-trace t)))
+  (use-package edebug
+  :elpaca nil
+	:defer t
+	:config
+	(progn (setq edebug-trace t)))
 #+END_SRC
 **** overseer
 #+BEGIN_SRC emacs-lisp
@@ -2639,7 +2629,7 @@ eval-last-sexp.
     (setq nix-indent-function 'nix-indent-line)))
 
 (use-package lsp-nix
-  :straight nil
+  :elpaca nil
   :after (lsp-mode)
   :config
   (progn
@@ -2888,7 +2878,7 @@ The following is taken from [[https://github.com/syl20bnr/spacemacs/blob/a650877
 
 (use-package purty
   :commands purty-on-save-mode
-  :straight (purty :repo "joneshf/purty"
+  :elpaca (purty :repo "joneshf/purty"
                    :type git
                    :host gitlab
                    :files ("purty.el")))
@@ -2921,7 +2911,9 @@ The following is taken from [[https://github.com/syl20bnr/spacemacs/blob/a650877
 #+END_SRC
 *** C/C++
 #+BEGIN_SRC emacs-lisp
-(use-package cc-mode)
+	(use-package cc-mode
+	  :elpaca nil
+	  :defer t)
 #+END_SRC
 *** C--
 #+BEGIN_SRC emacs-lisp
@@ -3601,7 +3593,7 @@ separately. This means that I need to load this file in init.el.
 **** Disable yasnippet in org-mode
 #+BEGIN_SRC emacs-lisp
 (use-package org
-  :straight nil
+  :elpaca nil
   :config
   (progn
     (defun imalison:disable-yas ()
@@ -3659,7 +3651,7 @@ This function replaces the default naming scheme with a call to
 #+BEGIN_SRC emacs-lisp :tangle org-config.el
 (use-package ox
   :defer t
-  :straight nil
+  :elpaca nil
   :config
   (defun org-export-get-reference (datum info)
     "Return a unique reference for DATUM, as a string.
@@ -3687,7 +3679,7 @@ alphanumeric characters only."
 #+BEGIN_SRC emacs-lisp :tangle org-config.el
 (use-package ox-html
   :commands (org-html-export-as-html org-html-export-as-html)
-  :straight nil
+  :elpaca nil
   :preface
   (progn
     (defvar imalison:link-svg-html
@@ -3719,7 +3711,7 @@ alphanumeric characters only."
 #+BEGIN_SRC emacs-lisp :tangle org-config.el
 (use-package ox-html
   :defer t
-  :straight nil
+  :elpaca nil
   :config
   (setq org-html-inline-image-rules
         '(("file" . "\\.\\(jpeg\\|jpg\\|png\\|gif\\|svg\\)\\(\\?.*?\\)?\\'")
@@ -3730,7 +3722,7 @@ alphanumeric characters only."
 **** Use org-tempo to allow inserting templates using e.g. <s
 #+begin_src emacs-lisp
 (use-package org-tempo
-  :straight nil
+  :elpaca nil
   :after org)
 #+end_src
 **** org-modern
@@ -3744,7 +3736,7 @@ alphanumeric characters only."
 #+BEGIN_SRC emacs-lisp
 ;; TODO: remove once melpa recipe fixed to point to right repo
 (use-package org-category-capture
-  :straight
+  :elpaca
   (org-category-capture
    :type git :flavor melpa
    :files ("org-category-capture*.el" "org-category-capture-pkg.el")
@@ -3924,7 +3916,7 @@ alphanumeric characters only."
   :config
   (progn
     (require 'org-fc-hydra))
-  :straight (org-fc :type git :host github :repo "l3kn/org-fc"
+  :elpaca (org-fc :type git :host github :repo "l3kn/org-fc"
                     :files ("*.el" "awk" "demo.org")))
 #+end_src
 **** org-ql
@@ -3936,7 +3928,7 @@ alphanumeric characters only."
 *** TeX
 #+BEGIN_SRC emacs-lisp
 (use-package tex
-  :straight (auctex :host github :repo "raxod502/auctex"
+  :elpaca (auctex :host github :repo "raxod502/auctex"
                     :branch "fork/1"
                     :files (:defaults (:exclude "doc/*.texi")))
   :commands TeX-mode
@@ -3961,7 +3953,7 @@ alphanumeric characters only."
 **** latex
  #+BEGIN_SRC emacs-lisp
 (use-package latex
-  :straight auctex
+  :elpaca auctex
   :after tex
   :config
   (progn
@@ -4087,17 +4079,18 @@ alphanumeric characters only."
 #+end_src
 ** vc
 #+begin_src emacs-lisp
-(use-package vc
-  :config
-  (progn
-    (defun vc-find-revision-of-file (revision)
-      (interactive
-       (list (vc-read-revision
-              "Revision to visit: "
-              (list (imalison:join-paths (magit-toplevel) (car (magit-list-files)))))))
-      (let* ((file (completing-read "Select file to visit: " (magit-revision-files revision)))
-             (full-file (imalison:join-paths (magit-toplevel) file)))
-        (switch-to-buffer (vc-find-revision full-file revision))))))
+  (use-package vc
+    :elpaca nil
+	:config
+	(progn
+	  (defun vc-find-revision-of-file (revision)
+		(interactive
+		 (list (vc-read-revision
+				"Revision to visit: "
+				(list (imalison:join-paths (magit-toplevel) (car (magit-list-files)))))))
+		(let* ((file (completing-read "Select file to visit: " (magit-revision-files revision)))
+			   (full-file (imalison:join-paths (magit-toplevel) file)))
+		  (switch-to-buffer (vc-find-revision full-file revision))))))
 #+end_src
 ** git-link
 #+BEGIN_SRC emacs-lisp
@@ -4250,49 +4243,50 @@ The main thing I do here is restore a bunch of keybindings that are eliminated
 in term-mode. This makes term-mode 1000% more useful
 (especially having M-x and C-y available).
 #+BEGIN_SRC emacs-lisp
-(use-package term
-  :demand t
-  :preface
-  (progn
-    (defun imalison:avy-term (arg)
-      (interactive "P")
-      (term-line-mode)
-      (imalison:avy arg))
+  (use-package term
+    :elpaca nil
+	:demand t
+	:preface
+	(progn
+	  (defun imalison:avy-term (arg)
+		(interactive "P")
+		(term-line-mode)
+		(imalison:avy arg))
 
-    (defun imalison:term-yank (&optional string)
-      (interactive)
-      (process-send-string
-       (get-buffer-process (current-buffer))
-       (if string string (current-kill 0))))
-    (defun imalison:term-yank-pop ()
-      (interactive)
-      (imalison:term-yank (read-from-kill-ring "Yank from kill-ring: "))))
-  :bind
-  (:map term-mode-map
-        ("C-c C-k" . imalison:term-char-mode)
-        :map term-raw-escape-map
-        ("M-x" . execute-extended-command)
-        ("C-j" . imalison:avy-term)
-        :map term-raw-map
-        ("M-x" . execute-extended-command)
-        ("C-j" . imalison:avy-term)
-        ("M-:" . eval-expression)
-        ("C-y" . imalison:term-yank)
-        ("M-y" . imalison:term-yank-pop))
-  :config
-  (progn
+	  (defun imalison:term-yank (&optional string)
+		(interactive)
+		(process-send-string
+		 (get-buffer-process (current-buffer))
+		 (if string string (current-kill 0))))
+	  (defun imalison:term-yank-pop ()
+		(interactive)
+		(imalison:term-yank (read-from-kill-ring "Yank from kill-ring: "))))
+	:bind
+	(:map term-mode-map
+		  ("C-c C-k" . imalison:term-char-mode)
+		  :map term-raw-escape-map
+		  ("M-x" . execute-extended-command)
+		  ("C-j" . imalison:avy-term)
+		  :map term-raw-map
+		  ("M-x" . execute-extended-command)
+		  ("C-j" . imalison:avy-term)
+		  ("M-:" . eval-expression)
+		  ("C-y" . imalison:term-yank)
+		  ("M-y" . imalison:term-yank-pop))
+	:config
+	(progn
 
-    (defun imalison:term-char-mode ()
-      (interactive)
-      (term-char-mode)
-      (goto-char (point-max)))
+	  (defun imalison:term-char-mode ()
+		(interactive)
+		(term-char-mode)
+		(goto-char (point-max)))
 
-    (define-key term-raw-map (kbd "C-h") help-map)
-    (add-hook 'term-mode-hook 'imalison:disable-linum-mode)
-    (add-hook 'term-mode-hook 'imalison:disable-yas-minor-mode)
-    (add-hook 'term-mode-hook 'imalison:disable-show-trailing-whitespace)
-    (setq term-buffer-maximum-size 0
-          term-suppress-hard-newline t)))
+	  (define-key term-raw-map (kbd "C-h") help-map)
+	  (add-hook 'term-mode-hook 'imalison:disable-linum-mode)
+	  (add-hook 'term-mode-hook 'imalison:disable-yas-minor-mode)
+	  (add-hook 'term-mode-hook 'imalison:disable-show-trailing-whitespace)
+	  (setq term-buffer-maximum-size 0
+			term-suppress-hard-newline t)))
 #+END_SRC
 ** vterm
 #+begin_src emacs-lisp
@@ -4473,19 +4467,20 @@ I don't use iedit directly, but it is used by [[*emr][emr]] and I need to disabl
 ** tramp
 #+BEGIN_SRC emacs-lisp
 (use-package tramp
-  :straight nil
+  :elpaca nil
   :commands tramp
   :config
   (setq tramp-default-method "scp"))
 #+END_SRC
 ** narrow-indirect
 #+BEGIN_SRC emacs-lisp
-(use-package narrow-indirect
-  :init
-  (progn
-    (define-key ctl-x-4-map "nd" 'ni-narrow-to-defun-indirect-other-window)
-    (define-key ctl-x-4-map "nn" 'ni-narrow-to-region-indirect-other-window)
-    (define-key ctl-x-4-map "np" 'ni-narrow-to-page-indirect-other-window)))
+  (use-package narrow-indirect
+    :elpaca nil
+	:init
+	(progn
+	  (define-key ctl-x-4-map "nd" 'ni-narrow-to-defun-indirect-other-window)
+	  (define-key ctl-x-4-map "nn" 'ni-narrow-to-region-indirect-other-window)
+	  (define-key ctl-x-4-map "np" 'ni-narrow-to-page-indirect-other-window)))
 #+END_SRC
 ** editorconfig
 I had to disable this mode because something that it does messes with coding settings and makes it so that I have to select the appropriate encoding every time I save gpg encrypted files.
@@ -4558,14 +4553,15 @@ Disabled because it makes it hard to redo things
 #+END_SRC
 ** recentf
 #+BEGIN_SRC emacs-lisp
-(use-package recentf
-  :demand t
-  :config
-  (progn
-    (setq recentf-max-saved-items 1000
-          recentf-max-menu-items 1000)
-    (advice-add 'recentf-cleanup :around 'imalison:shut-up-around)
-    (recentf-mode +1)))
+  (use-package recentf
+    :elpaca nil
+	:demand t
+	:config
+	(progn
+	  (setq recentf-max-saved-items 1000
+			recentf-max-menu-items 1000)
+	  (advice-add 'recentf-cleanup :around 'imalison:shut-up-around)
+	  (recentf-mode +1)))
 #+END_SRC
 ** key-chord
 I have currently disabled key-chord because it may cause typing lag.
@@ -4597,7 +4593,7 @@ I have currently disabled key-chord because it may cause typing lag.
 ** calc-mode
 #+BEGIN_SRC emacs-lisp
 (use-package calc-mode
-  :straight nil
+  :elpaca nil
   :commands calc
   :config
   (progn
@@ -4653,11 +4649,14 @@ Not really sure what this is
 #+END_SRC
 ** epg
 #+BEGIN_SRC emacs-lisp
-(use-package epg
-  :after shut-up
-  :config
-  (shut-up
-    (epa-file-enable)))
+  (use-package epg
+	:elpaca nil
+	:after shut-up
+	:custom
+	(epg-gpg-program "gpg")
+	:config
+	(shut-up
+	  (epa-file-enable)))
 #+END_SRC
 ** pinentry
 #+BEGIN_SRC emacs-lisp
@@ -4686,7 +4685,7 @@ Not really sure what this is
 (use-package mu4e
   :disabled t
   :load-path mu4e-elisp-directory
-  :straight nil
+  :elpaca nil
   :commands (mu4e mu4e-view-message-with-msgid mu4e-update-index email)
   :bind ("C-c 0" . email)
   :config
@@ -4852,10 +4851,11 @@ This is useful with server mode when editing gmail messages. I think that it is 
     (add-hook 'sauron-event-added-functions 'sauron-alert-el-adapter)))
 
 #+END_SRC
-** screenshot
+** COMMENT screenshot
 #+BEGIN_SRC emacs-lisp
-(use-package screenshot
-  :commands screenshot)
+  (use-package screenshot
+	:elpaca nil
+	:commands screenshot)
 #+END_SRC
 ** libmpdee
 #+BEGIN_SRC emacs-lisp
@@ -4986,20 +4986,23 @@ This also adds syntax highlighting for gradle
 #+END_SRC
 ** jsx-mode
 #+BEGIN_SRC emacs-lisp
-(use-package jsx-mode
-  :defer t)
+  (use-package jsx-mode
+	:elpaca nil
+	:defer t)
 #+END_SRC
 ** css
 #+BEGIN_SRC emacs-lisp
-(use-package css-mode
-  :mode (("\\.css\\'" . css-mode)
-         ("\\.rasi\\'" . css-mode)))
+  (use-package css-mode
+	:elpaca nil
+	:mode (("\\.css\\'" . css-mode)
+		   ("\\.rasi\\'" . css-mode)))
 #+END_SRC
 ** sgml-mode
 #+BEGIN_SRC emacs-lisp
-(use-package sgml-mode
-  ;; :bind ("C-c b" . web-beautify-html) TODO: mode specific, change binding
-  :commands sgml-mode)
+  (use-package sgml-mode
+	:elpaca nil
+	;; :bind ("C-c b" . web-beautify-html) TODO: mode specific, change binding
+	:commands sgml-mode)
 #+END_SRC
 ** evil
 #+BEGIN_SRC emacs-lisp
@@ -5032,7 +5035,7 @@ Ensure all themes that I use are installed:
                   forest-blue-theme flatland-theme afternoon-theme
                   cyberpunk-theme dracula-theme))
 
-(mapcar 'straight-use-package packages-appearance)
+(mapcar (lambda (package-name) (eval `(use-package ,package-name))) packages-appearance)
 
 (use-package doom-themes
   :defer t)
@@ -5181,19 +5184,20 @@ load-theme hook (See the heading below).
 #+END_SRC
 *** Hooks to set everything up
 #+BEGIN_SRC emacs-lisp
-(defvar imalison:appearance-setup-done nil)
+  (defvar imalison:appearance-setup-done nil)
 
-(defun imalison:appearance-setup-hook (&rest args)
-  (unless imalison:appearance-setup-done
-    (unless (member imalison:dark-theme custom-enabled-themes)
-      (load-theme imalison:dark-theme t))
-    (apply 'imalison:appearance args)
-    (setq imalison:default-font-size-pt (face-attribute 'default :height))
-    (setq imalison:appearance-setup-done t)))
+  (defun imalison:appearance-setup-hook (&rest args)
+	(elpaca-wait)
+	(unless imalison:appearance-setup-done
+	  (unless (member imalison:dark-theme custom-enabled-themes)
+		(load-theme imalison:dark-theme t))
+	  (apply 'imalison:appearance args)
+	  (setq imalison:default-font-size-pt (face-attribute 'default :height))
+	  (setq imalison:appearance-setup-done t)))
 
-(if (daemonp)
-    (add-hook 'after-make-frame-functions 'imalison:appearance-setup-hook)
-  (add-hook 'after-init-hook 'imalison:appearance-setup-hook))
+  (if (daemonp)
+	  (add-hook 'after-make-frame-functions 'imalison:appearance-setup-hook)
+	(add-hook 'elpaca-after-init-hook 'imalison:appearance-setup-hook))
 #+END_SRC
 * Post Init Custom
 #+BEGIN_SRC emacs-lisp

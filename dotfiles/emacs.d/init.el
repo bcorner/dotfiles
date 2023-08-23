@@ -1,34 +1,10 @@
 ;; -*- no-byte-compile: t -*-
+(let* ((current-directory (file-name-directory load-file-name))
+       (elpaca-setup (concat current-directory "elpaca-setup.el")))
+  (load elpaca-setup))
 
-(let ((bootstrap-file (concat user-emacs-directory "straight/bootstrap.el"))
-      (bootstrap-version 2))
-  (unless (file-exists-p bootstrap-file)
-    (with-current-buffer
-        (url-retrieve-synchronously
-         "https://raw.githubusercontent.com/raxod502/straight.el/develop/install.el"
-         'silent 'inhibit-cookies)
-      (goto-char (point-max))
-      (eval-print-last-sexp)))
-  (load bootstrap-file nil 'nomessage))
-
-(setq native-comp-deferred-compilation-deny-list nil)
-(setq warning-minimum-level :emergency)
-
-;; This is a workaround for an issue in emacs28 with symlinks. See https://github.com/radian-software/straight.el/issues/701
-(defun my-patch-package-find-file-visit-truename (oldfun &rest r)
-  (let ((find-file-visit-truename nil))
-    (apply oldfun r)))
-
-(advice-add #'straight--build-autoloads :around
-            #'my-patch-package-find-file-visit-truename)
-
-(setq package-enable-at-startup nil
-      straight-use-package-by-default t
-      straight-vc-git-default-protocol 'ssh)
-(straight-use-package 'use-package)
 (require 'use-package)
 (setq use-package-enable-imenu-support t)
-(setq use-package-ensure-function 'straight-use-package-ensure-function)
 
 (defvar imalison:do-benchmark nil)
 
@@ -40,6 +16,21 @@
   :demand t
   :config
   (setq max-specpdl-size 99999999))
+
+(use-package emit
+  :demand t
+  :elpaca (emit :type git :host github :repo "IvanMalison/emit"))
+
+(use-package shut-up
+  :demand t
+  :config
+  (defun imalison:shut-up-around (function &rest args)
+	(shut-up (apply function args))))
+
+(use-package dash :demand t)
+(use-package s :demand t)
+
+(elpaca-wait)
 
 (defvar imalison:kat-mode nil)
 (setq custom-file "~/.emacs.d/custom-before.el")
@@ -56,15 +47,17 @@
 
 ;; Without this, org can behave very strangely
 (use-package org
-  :straight
+  :elpaca
   (org :type git :host github :repo "colonelpanic8/org-mode" :local-repo "org"
        :branch "add-org-agenda-transient"
-       :depth full :pre-build (straight-recipes-org-elpa--build) :build
+       :depth full :build
        (:not autoloads) :files
        (:defaults "lisp/*.el" ("etc/styles/" "etc/styles/*")))
-  :defer t)
+  :demand t
+  :custom
+  (org-edit-src-content-indentation 0))
 
-(use-package dash :demand t)
+(elpaca-wait)
 
 (let ((debug-on-error t))
   (org-babel-load-file
