@@ -7,6 +7,7 @@
   environment.systemPackages = with pkgs; [
     sublime
     vlc
+    imagemagick
   ];
   myModules.desktop.enable = false;
   myModules.plasma.enable = false;
