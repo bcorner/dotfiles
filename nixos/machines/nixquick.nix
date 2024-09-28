@@ -4,14 +4,21 @@
     ../configuration.nix
   ];
 
+  services.macos-ventura = {
+    enable = true;
+    openFirewall = true;
+    vncListenAddr = "0.0.0.0";
+  };
+
   features.full.enable = true;
-  modules.cache-server = {
+  myModules.cache-server = {
     enable = true;
     port = 3090;
   };
-  modules.gitea-runner.enable = true;
-  modules.vscode.enable = true;
-  modules.kat.enable = true;
+  myModules.gitea-runner.enable = true;
+  myModules.vscode.enable = true;
+  myModules.kat.enable = true;
+  myModules.nvidia.enable = true;
 
   networking.hostName = "nixquick";
 
@@ -21,15 +28,6 @@
   boot.kernelModules = [ "kvm-intel" ];
   boot.extraModulePackages = [ ];
   boot.loader.systemd-boot.enable = true;
-
-  # install nvidia drivers in addition to intel one
-  hardware.opengl.extraPackages = [ pkgs.linuxPackages.nvidia_x11.out ];
-  hardware.opengl.extraPackages32 = [ pkgs.linuxPackages.nvidia_x11.lib32 ];
-  services.xserver = {
-    videoDrivers = [ "nvidia" ];
-  };
-
-  hardware.opengl.driSupport32Bit = true;
 
   hardware.nvidia.modesetting.enable = true;
 

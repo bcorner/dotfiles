@@ -1,12 +1,13 @@
 {
   inputs = {
+    nixtheplanet.url = "github:matthewcroughan/nixtheplanet";
     railbird-secrets = {
       url = "git+ssh://gitea@dev.railbird.ai:1123/railbird/secrets-flake.git";
     };
     nixos-hardware = { url = "github:colonelpanic8/nixos-hardware/add-g834jzr"; };
 
     nixpkgs = {
-      url = "github:colonelpanic8/nixpkgs/with-cursor";
+      url = "github:NixOS/nixpkgs/nixos-unstable";
     };
 
     home-manager = {
@@ -34,7 +35,7 @@
     };
 
     taffybar = {
-      url = "github:taffybar/taffybar";
+      url = "github:taffybar/taffybar/old-master";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -104,8 +105,6 @@
 
     vscode-server.url = "github:nix-community/nixos-vscode-server";
 
-    nixpkgs-regression = { url = "github:NixOS/nixpkgs"; };
-
     nixified-ai = { url = "github:nixified-ai/flake"; };
 
     nixos-wsl = { url = "github:nix-community/NixOS-WSL"; };
@@ -114,7 +113,7 @@
   };
 
   outputs = inputs@{
-    self, nixpkgs, nixos-hardware, home-manager, taffybar, xmonad,
+    self, nixpkgs, nixos-hardware, home-manager, taffybar, xmonad, nixtheplanet,
     xmonad-contrib, notifications-tray-icon, nix, agenix, imalison-taffybar, ...
   }:
   let
@@ -126,7 +125,7 @@
       name = machineNameFromFilename filename;
       value = {
         modules = [
-          (machinesFilepath + ("/" + filename)) agenix.nixosModules.default
+          (machinesFilepath + ("/" + filename)) agenix.nixosModules.default nixtheplanet.nixosModules.macos-ventura
         ];
       };
     };
