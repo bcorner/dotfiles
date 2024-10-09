@@ -7,9 +7,6 @@
 [submodule "dotfiles/xmonad/xmonad-contrib"]
 	path = dotfiles/config/xmonad/xmonad-contrib
 	url = git@github.com:xmonad/xmonad-contrib.git
-[submodule "dotfiles/config/alacritty/themes"]
-	path = dotfiles/config/alacritty/themes
-	url = https://github.com/alacritty/alacritty-theme
 [submodule "nixos/railbird.ai"]
 	path = nixos/railbird.ai
 	url = git@github.com:billnerds/railbird.ai.git
