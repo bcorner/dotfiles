@@ -12,6 +12,7 @@
   environment.systemPackages = with pkgs; [
     sublime
     vlc
+    bat
   ];
   myModules.desktop.enable = false;
   myModules.plasma.enable = false;
