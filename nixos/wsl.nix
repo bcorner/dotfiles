@@ -16,6 +16,8 @@ makeEnable config "myModules.wsl" false {
   myModules.bootloaders.grub.enable = false;
   myModules.xmonad.enable = false;
   myModules.plasma.enable = false;
+  # keyd requires /dev/uinput, which is not available under WSL.
+  myModules.keyd.enable = false;
   # Tailscale-in-WSL is usually better handled by the Windows host Tailscale
   # client. Disable by default so WSL machines don't fail to start tailscaled.
   myModules.tailscale.enable = false;
