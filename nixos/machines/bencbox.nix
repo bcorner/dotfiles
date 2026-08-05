@@ -9,7 +9,6 @@
     ../configuration.nix
   ];
   services.xserver.enable = true;
-  services.envfs.enable = true;
   environment.systemPackages = with pkgs; [
     sublime
     vlc
