@@ -591,6 +591,7 @@
             [Unit]
             Description=Portal service (GTK/GNOME implementation)
             PartOf=graphical-session.target
+            ConditionEnvironment=WAYLAND_DISPLAY
 
             [Service]
             Type=dbus

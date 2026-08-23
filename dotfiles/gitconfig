@@ -82,10 +82,6 @@
 [merge]
 	conflictstyle = diff3
 
-[include]
-	path = ~/.gitconfig.custom
-	path = ~/.gitconfig.this-machine
-
 [rerere]
 	enabled = false
 
@@ -134,3 +130,9 @@
 [user]
 	name = Ivan Malison
 	email = IvanMalison@gmail.com
+
+# Per-user and per-machine settings must be loaded last so a shared checkout
+# cannot override the identity of the account using it.
+[include]
+	path = ~/.gitconfig.custom
+	path = ~/.gitconfig.this-machine

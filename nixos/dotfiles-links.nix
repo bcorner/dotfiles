@@ -25,17 +25,26 @@
   srcConfig = srcDotfiles + "/config";
   srcCodex = srcDotfiles + "/codex";
 
-  excludedTop = [
-    # Managed by nix-shared/home-manager/codex-generated-skills.nix so
-    # config.toml can be generated from shared and machine-local fragments.
-    "codex"
-    # Managed by Nix directly (PATH/fpath), not meant to appear as ~/.lib.
-    "lib"
-    # Avoid colliding with HM-generated xdg.configFile entries for now.
-    "config"
-    # Handled as a single directory symlink below.
-    "emacs.d"
-  ];
+  excludedTop =
+    [
+      # Managed by nix-shared/home-manager/codex-generated-skills.nix so
+      # config.toml can be generated from shared and machine-local fragments.
+      "codex"
+      # Managed by Nix directly (PATH/fpath), not meant to appear as ~/.lib.
+      "lib"
+      # Avoid colliding with HM-generated xdg.configFile entries for now.
+      "config"
+      # Handled as a single directory symlink below.
+      "emacs.d"
+    ]
+    # Home Manager's Zsh module owns these files when enabled. Keeping a second
+    # out-of-store entry produces equivalent `.zshrc` and `./.zshrc` targets,
+    # which bypasses its duplicate-target check and fails the files derivation.
+    ++ lib.optionals config.programs.zsh.enable [
+      "zprofile"
+      "zshenv"
+      "zshrc"
+    ];
 
   firstComponent = rel: let
     parts = lib.splitString "/" rel;
@@ -80,6 +89,14 @@
     lib.nameValuePair name {
       source = oos "${worktreeDotfiles}/config/${name}";
     };
+  configFileNames = [
+    "flake8"
+    "starship.toml"
+  ];
+  mkConfigFile = name:
+    lib.nameValuePair name {
+      source = oos "${worktreeDotfiles}/config/${name}";
+    };
 in {
   imports = [
     ../nix-shared/home-manager/codex-generated-skills.nix
@@ -89,7 +106,10 @@ in {
     builtins.listToAttrs (map mkManaged managedRelFiles);
 
   xdg.configFile =
-    builtins.listToAttrs (map mkConfigDir configDirNames);
+    builtins.listToAttrs (
+      (map mkConfigDir configDirNames)
+      ++ (map mkConfigFile configFileNames)
+    );
 
   myModules.codexGeneratedSkills.enable = true;
   myModules.codexGeneratedSkills.sourceCodexDir = "${srcCodex}";

@@ -9,9 +9,12 @@
     ../configuration.nix
   ];
   services.xserver.enable = true;
+  services.envfs.enable = true;
+  services.tailscale.enable = true;
   environment.systemPackages = with pkgs; [
-    sublime
+    sublime3
     vlc
+    bat
   ];
   myModules.desktop.enable = false;
   myModules.plasma.enable = false;

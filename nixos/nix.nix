@@ -29,6 +29,13 @@
     home-manager.backupCommand = pkgs.writeShellScript "home-manager-backup-command" ''
       set -eu
 
+      # Home Manager currently expands this command without arguments while
+      # composing a verbose collision message. Treat that probe as a no-op;
+      # the actual backup invocation below always supplies the target path.
+      if [[ "$#" -eq 0 ]]; then
+        exit 0
+      fi
+
       target_path="$1"
       backup_ext="''${HOME_MANAGER_BACKUP_EXT:-hm-backup}"
       backup_path="''${target_path}.''${backup_ext}"
