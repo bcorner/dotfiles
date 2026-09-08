@@ -11,6 +11,9 @@
   services.xserver.enable = true;
   services.envfs.enable = true;
   services.tailscale.enable = true;
+  services.paseo.listenAddress = "100.85.161.82";
+  age.secrets.paseo-password-environment.file =
+    lib.mkForce ../secrets/paseo-password-environment.bencbox.age;
   environment.systemPackages = with pkgs; [
     sublime3
     vlc
