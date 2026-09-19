@@ -5,88 +5,164 @@
   makeEnable,
   pkgs,
   ...
-}: let
-  paseoUser =
-    if config.myModules.wsl.enable
-    then config.wsl.defaultUser
-    else "imalison";
-  paseoGroup = config.users.users.${paseoUser}.group;
-  paseoPackage = import ./paseo-node-pty-workaround.nix {
-    paseo = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default;
+}:
+makeEnable config "myModules.paseo" false {
+  imports = [inputs.paseo.nixosModules.default];
+
+  services.paseo = {
+    enable = true;
+    package = import ./paseo-node-pty-workaround.nix {
+      paseo = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    };
+    user = config.myModules.primaryUser;
+    group = "users";
+    listenAddress = "0.0.0.0";
+    port = 6767;
+
+    # Accept the machine's MagicDNS short name in addition to IP addresses,
+    # which Paseo permits automatically.
+    hostnames = [config.networking.hostName];
   };
-  remoteAccessEnabled = config.services.tailscale.enable;
-  bindsTailscaleAddress =
-    remoteAccessEnabled
-    && config.services.paseo.listenAddress != "0.0.0.0";
-in
-  makeEnable config "myModules.paseo" false {
-    imports = [inputs.paseo.nixosModules.default];
 
-    services.paseo = {
-      enable = true;
-      package = paseoPackage;
-      user = paseoUser;
-      group = paseoGroup;
-      listenAddress = lib.mkDefault "0.0.0.0";
-      port = 6767;
+  # Paseo binds all addresses so it can accept the Tailscale interface, but
+  # only expose its port through that interface. In particular, do not use
+  # services.paseo.openFirewall, which would also expose it on LAN interfaces.
+  networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
+    config.services.paseo.port
+  ];
 
-      # Accept the machine's MagicDNS short name in addition to IP addresses,
-      # which Paseo permits automatically.
-      hostnames = [config.networking.hostName];
-    };
+  age.secrets.paseo-password-environment = lib.mkIf config.services.tailscale.enable {
+    file = ./secrets/paseo-password-environment.age;
+    owner = config.services.paseo.user;
+    group = config.services.paseo.group;
+    mode = "0400";
+  };
 
-    # Paseo binds all addresses so it can accept the Tailscale interface, but
-    # only expose its port through that interface. In particular, do not use
-    # services.paseo.openFirewall, which would also expose it on LAN interfaces.
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
-      config.services.paseo.port
-    ];
+  systemd.services.paseo = lib.mkMerge [
+    {
+      # Rebuilds driven from a terminal or agent that lives inside
+      # paseo.service's own cgroup die when switch-to-configuration stops the
+      # unit, so the switch's start phase never runs and paseo stays down.
+      # Upholds= makes systemd itself start the unit again whenever it is
+      # found inactive while multi-user.target is up.
+      upheldBy = ["multi-user.target"];
+      preStart = let
+        ensurePaseoDaemonSettings = import ../nix-shared/ensure-paseo-daemon-settings.nix {
+          inherit pkgs;
+          settings = lib.recursiveUpdate {
+            daemon.mcp.injectIntoAgents = true;
+            # Self-hosted ntfy on jimi-hendnix (myModules.ntfy); the F-Droid
+            # app build cannot use Expo push.
+            daemon.push = {
+              ntfy = {
+                serverUrl = "http://jimi-hendnix:2586";
+                topic = "paseo-8ff72564";
+              };
+              # Count as away 30s after the last input, rather than 3 minutes.
+              presenceThresholdMs = 30000;
+            };
+            agents.providers.opencode.enabled = true;
+            daemon.agentProfiles = [
+              {
+                id = "legacy_favorite:claude:claude-fable-5-1";
+                name = "Fable 5.1";
+                provider = "claude";
+                model = "claude-fable-5-1";
+              }
+              {
+                id = "legacy_favorite:codex:gpt-6-astra";
+                name = "GPT-6-Astra";
+                provider = "codex";
+                model = "gpt-6-astra";
+              }
+              {
+                id = "legacy_favorite:codex:gpt-5.6-sol";
+                name = "GPT-5.6-Sol";
+                provider = "codex";
+                model = "gpt-5.6-sol";
+              }
+              {
+                id = "legacy_favorite:codex:gpt-5.6-luna";
+                name = "GPT-5.6-Luna";
+                provider = "codex";
+                model = "gpt-5.6-luna";
+              }
+              {
+                id = "legacy_favorite:claude:claude-opus-5";
+                name = "Opus 5";
+                provider = "claude";
+                model = "claude-opus-5";
+              }
+              {
+                id = "legacy_favorite:opencode:muse-spark-1.3-contributor-free";
+                name = "Muse Spark 1.3 Free";
+                provider = "opencode";
+                model = "opencode/muse-spark-1.3-contributor-free";
+                modeId = "build";
+              }
+            ];
 
-    age.secrets.paseo-password-environment = lib.mkIf remoteAccessEnabled {
-      file = ./secrets/paseo-password-environment.age;
-      owner = config.services.paseo.user;
-      group = config.services.paseo.group;
-      mode = "0400";
-    };
-    age.identityPaths = lib.mkIf remoteAccessEnabled (
-      lib.mkAfter ["/home/${paseoUser}/.ssh/id_ed25519"]
-    );
+            # Live Voice reads these files fresh at the start of every call and
+            # injects them as context, so the voice chief of staff knows how the
+            # org repo is laid out and what is currently going on without being
+            # told each time. Keep the list short: each file is capped at ~12KiB
+            # and the set at ~32KiB, and everything here competes with the agent
+            # and workspace snapshots for the same startup budget. Live task
+            # state is not here on purpose -- gtd.org alone is 100KiB+ and would
+            # be truncated. Ask the agenda through a tool or a delegated session
+            # instead.
+            liveVoice = {
+              defaultContextProfile = "life";
+              contextProfiles = [
+                {
+                  id = "life";
+                  label = "Life";
+                  files = [
+                    "~/org/AGENTS.md"
+                    "~/org/agents/profile.org"
+                    "~/org/planning/context.org"
+                  ];
+                  instructions = ''
+                    You are Ivan's chief of staff for life logistics as well as
+                    code. The files above describe how his org-mode GTD system
+                    is organized, how he works, and what is currently going on.
+                    Treat them as background, not as a script to read back.
 
-    systemd.services.paseo = lib.mkMerge [
-      {
-        # Rebuilds driven from a terminal or agent that lives inside
-        # paseo.service's own cgroup die when switch-to-configuration stops the
-        # unit, so the switch's start phase never runs and paseo stays down.
-        # Upholds= makes systemd itself start the unit again whenever it is
-        # found inactive while multi-user.target is up.
-        upheldBy = ["multi-user.target"];
-        environment = {
-          HOME = "/home/${paseoUser}";
-          LOGNAME = paseoUser;
-          USER = paseoUser;
+                    Anything he mentions wanting to do, remember, or follow up
+                    on is a capture: route it into his inbox rather than holding
+                    it in the conversation. Route real work to sessions that can
+                    reach the files -- you are in a plain directory and should
+                    not try to read or edit org files yourself.
+                  '';
+                }
+                {
+                  id = "work";
+                  label = "Work";
+                  files = [];
+                  instructions = ''
+                    Keep this call on the technical work being discussed. Do not
+                    bring up personal tasks, agenda items, or life logistics
+                    unless Ivan raises them.
+                  '';
+                }
+              ];
+            };
+            # Declarative plugins as Nix store directory sources; declared
+            # keys win, everything else in config.json survives.
+          } (import ../nix-shared/paseo-plugins.nix {inherit pkgs;}).daemonSettings;
         };
-        serviceConfig.WorkingDirectory = "/home/${paseoUser}";
-        preStart = let
-          ensurePaseoMcpInjection = import ../nix-shared/ensure-paseo-mcp-injection.nix {inherit pkgs;};
-        in
-          lib.mkAfter ''
-            ${ensurePaseoMcpInjection} ${lib.escapeShellArg "${config.services.paseo.dataDir}/config.json"}
-          '';
-      }
-      (lib.mkIf remoteAccessEnabled {
-        after = ["agenix.service" "tailscaled.service"];
-        wants = ["tailscaled.service"];
-        serviceConfig.EnvironmentFile = config.age.secrets.paseo-password-environment.path;
-      })
-      (lib.mkIf bindsTailscaleAddress {
-        preStart = lib.mkBefore ''
-          ${pkgs.tailscale}/bin/tailscale wait
-          ${pkgs.tailscale}/bin/tailscale ip --assert=${lib.escapeShellArg config.services.paseo.listenAddress}
+      in
+        lib.mkAfter ''
+          ${ensurePaseoDaemonSettings} ${lib.escapeShellArg "${config.services.paseo.dataDir}/config.json"}
         '';
-      })
-    ];
+    }
+    (lib.mkIf config.services.tailscale.enable {
+      after = ["agenix.service"];
+      serviceConfig.EnvironmentFile = config.age.secrets.paseo-password-environment.path;
+    })
+  ];
 
-    home-manager.users.${paseoUser}.imports = [
-      ../nix-shared/home-manager/paseo-settings-seed.nix
-    ];
-  }
+  home-manager.users.${config.myModules.primaryUser}.imports = [
+    ../nix-shared/home-manager/paseo-settings-seed.nix
+  ];
+}

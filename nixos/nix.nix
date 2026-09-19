@@ -20,6 +20,7 @@
   config = {
     home-manager.users = lib.genAttrs realUsers (_: {});
     home-manager.extraSpecialArgs = {
+      inherit (config.myModules) primaryUser;
       nixos = {
         inherit specialArgs config;
       };
@@ -121,6 +122,7 @@
         (import ./emacs-overlay.nix)
         (import ../nix-shared/overlays)
         inputs.t3code-integration.overlays.client
+        inputs.google-messages-bridge.overlays.default
         (final: prev: let
           unwrapped = prev.t3code.unwrapped;
         in {

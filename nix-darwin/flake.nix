@@ -86,7 +86,7 @@
     # Pin the assembled integration by revision; its flake owns packaging,
     # desktop integration, and the persistent server module.
     t3code-integration = {
-      url = "github:colonelpanic8/t3code/59dba05b29334e85a2a7134c3081d34b19e4d4ed";
+      url = "github:colonelpanic8/t3code/e542bc839fb331fcd08c3c1e3122539c46c0dc6e";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -154,9 +154,24 @@
       ...
     }: let
       essentialPkgs = (import ../nix-shared/system/essential.nix {inherit pkgs lib inputs;}).environment.systemPackages;
-      paseoHome = "${homeForUser primaryUser}/.paseo";
-      paseoPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      paseoDesktopPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
+      paseoUser = targetPrimaryUser;
+      paseoHome = "${homeForUser paseoUser}/.paseo";
+      paseoPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
+        postInstall =
+          (old.postInstall or "")
+          + ''
+            # Runtime tracing misses node-pty's dynamically loaded native files.
+            for path in {node_modules,packages/server/node_modules}/node-pty/{build/Release,prebuilds/darwin-arm64}/{pty.node,spawn-helper}; do
+              [ -f "$path" ] || continue
+              mkdir -p "$out/lib/paseo/$(dirname "$path")"
+              cp -p "$path" "$out/lib/paseo/$path"
+            done
+            node -e "require('$out/lib/paseo/packages/server/node_modules/node-pty')"
+          '';
+      });
+      paseoDesktopPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop.override {
+        paseo = paseoPackage;
+      };
       ensurePaseoMcpInjection = import ../nix-shared/ensure-paseo-mcp-injection.nix {inherit pkgs;};
       paseoDaemon = pkgs.writeShellScript "paseo-daemon" ''
         set -eu
@@ -218,7 +233,7 @@
         };
         secrets.paseo-password-environment = {
           file = ../nixos/secrets/paseo-password-environment.age;
-          owner = primaryUser;
+          owner = paseoUser;
           mode = "0400";
         };
       };
@@ -310,21 +325,21 @@
       launchd.daemons.paseo = {
         serviceConfig = {
           ProgramArguments = ["${paseoDaemon}"];
-          UserName = primaryUser;
+          UserName = paseoUser;
           GroupName = "staff";
-          WorkingDirectory = homeForUser primaryUser;
+          WorkingDirectory = homeForUser paseoUser;
           EnvironmentVariables = {
-            HOME = homeForUser primaryUser;
-            USER = primaryUser;
-            LOGNAME = primaryUser;
+            HOME = homeForUser paseoUser;
+            USER = paseoUser;
+            LOGNAME = paseoUser;
             SHELL = "/bin/zsh";
             NODE_ENV = "production";
             PASEO_HOME = paseoHome;
             PASEO_HOSTNAMES = config.networking.hostName;
             PATH = lib.concatStringsSep ":" [
-              "${homeForUser primaryUser}/.nix-profile/bin"
-              "${homeForUser primaryUser}/.local/state/nix/profile/bin"
-              "/etc/profiles/per-user/${primaryUser}/bin"
+              "${homeForUser paseoUser}/.nix-profile/bin"
+              "${homeForUser paseoUser}/.local/state/nix/profile/bin"
+              "/etc/profiles/per-user/${paseoUser}/bin"
               "/run/current-system/sw/bin"
               "/nix/var/nix/profiles/default/bin"
               "/opt/homebrew/bin"
@@ -337,8 +352,8 @@
           KeepAlive = true;
           ProcessType = "Background";
           ThrottleInterval = 10;
-          StandardOutPath = "${homeForUser primaryUser}/Library/Logs/paseo-daemon.log";
-          StandardErrorPath = "${homeForUser primaryUser}/Library/Logs/paseo-daemon.err.log";
+          StandardOutPath = "${homeForUser paseoUser}/Library/Logs/paseo-daemon.log";
+          StandardErrorPath = "${homeForUser paseoUser}/Library/Logs/paseo-daemon.err.log";
         };
       };
 
@@ -535,10 +550,12 @@
           "https://cache.nixos.org"
           "https://codex-cli.cachix.org"
           "https://claude-code.cachix.org"
+          "https://paseo-colonelpanic8.cachix.org"
         ];
         trusted-public-keys = [
           "codex-cli.cachix.org-1:1Br3H1hHoRYG22n//cGKJOk3cQXgYobUel6O8DgSing="
           "claude-code.cachix.org-1:YeXf2aNu7UTX8Vwrze0za1WEDS+4DuI2kVeWEE4fsRk="
+          "paseo-colonelpanic8.cachix.org-1:fxfDiskEv5JT+xX3CbXBUAWblc+234mDeodXDi7eY1k="
         ];
       };
       nix.gc = {
@@ -585,7 +602,7 @@
         useUserPackages = true;
         backupFileExtension = "hm-backup";
         extraSpecialArgs = {
-          inherit inputs libDir;
+          inherit inputs libDir primaryUser;
         };
         sharedModules = sharedHomeModules;
         users = lib.genAttrs enabledHomeUsers (_: {});

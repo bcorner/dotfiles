@@ -71,6 +71,11 @@ yarn cache clean
 npm cache clean --force
 ```
 
+On current npm versions, `npm cache clean --force` leaves the separate
+`~/.npm/_npx` package cache intact. When it is in scope and has no open files,
+enumerate it with `npm cache npx ls` and remove the explicit listed keys with
+`npm cache npx rm <key>...`; do not delete the directory directly.
+
 ## Step 3: Rust Build Artifact Cleanup
 
 Do not start with a blind `find ~ -name target` or with hard-coded roots that may miss worktrees. Inventory explicit `target/` directories first using the bundled helper and the machine-specific root list in `references/rust-target-roots.txt`.
@@ -147,6 +152,17 @@ timeout 30s du -xh --max-depth=1 "$HOME/.local/share" 2>/dev/null | sort -h
 
 Machine-specific heavy hitters seen in practice:
 
+- 2026-09-06 `mac-demarco-mini`: `~/Library/Logs/git-sync-rs.log` reached
+  30.5 GiB and exhausted the shared APFS container, crashing Paseo with
+  `ENOSPC`. The watcher repeatedly failed on missing Claude `plans` and
+  `tasks` directories. Stop the watcher before archiving its log; streaming
+  `gzip -1 -c` over SSH to another host preserved the entire log in 403 MiB.
+  Verify the decompressed byte count and SHA-256 against the source before
+  removing it. At 106 MiB free, both shell redirection and `truncate -s 0`
+  failed with `ENOSPC`; unlinking the verified, archived log succeeded and
+  recovered about 31 GiB. Restore the missing watch directories before
+  restarting the watcher. The Linux `safe_ncdu` helper currently fails on
+  this Mac because `findmnt` is unavailable; record that coverage gap.
 - 2026-07-24 `ryzen-shine` online partition reclaim: GPT partition numbers
   were not in physical order. `/boot` (`nvme0n1p3`) and root
   (`nvme0n1p4`) physically preceded the obsolete Microsoft-reserved
@@ -323,7 +339,7 @@ Validated 2026-08-14 on `jimi-hendnix` for gitea-runner. When the user wants a s
 
 ### `just switch` gotchas hit during that run
 
-- `safe_switch` refuses to start when a tmux session already exists on the `nixos-switch` socket, and instead **silently tails the previous run's log** — so it looks like a successful switch that did not include your change. Check `tmux -L nixos-switch list-panes -t switch -F '#{pane_pid} #{pane_dead}'`; `pane_dead=1` means the old run finished and the session is just lingering. `tmux -L nixos-switch kill-session -t switch`, then re-run. Always verify with `readlink /run/current-system` plus a `systemctl is-enabled` check rather than trusting the tail output.
+- `safe_switch` retains a completed tmux pane for inspection, but the next invocation removes that completed session before starting a new switch. If a switch seems stale, check `tmux -L nixos-switch list-panes -t switch -F '#{pane_pid} #{pane_dead}'`; `pane_dead=1` means the old run finished and should be replaced automatically. Always verify with `readlink /run/current-system` plus a `systemctl is-enabled` check rather than trusting log output alone.
 - `/boot` on this host is deliberately kept `ro` by another workflow (the journal shows a `mount -o remount,rw /boot` immediately followed by `remount,ro`). `switch-to-configuration` then fails with `OSError: [Errno 30] Read-only file system: '/boot/loader/entries/...'` and `Failed to install bootloader` **after** the config has already built. Before assuming corruption, check `dmesg` for `fat-fs`/device errors against the actual `/boot` device — in this run the I/O errors were all on `sdd`/`sdc3` (removable rescue media), and boot-time `systemd-fsck` reported `/dev/nvme1n1p1` clean. Remount rw, re-run the switch, then restore `ro` to leave the machine as found.
 
 ## Safety Rules

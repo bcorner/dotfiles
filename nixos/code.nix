@@ -100,10 +100,8 @@ in
     environment.systemPackages = with pkgs;
       [
         # LLM Tools
-        # antigravity
         claude-code
         codex
-        gemini-cli
         inputs.gmcli.packages.${pkgs.stdenv.hostPlatform.system}.default
         inputs.lastfm-edit.packages.${pkgs.stdenv.hostPlatform.system}.scrobble-scrubber-app
         opencode
@@ -168,7 +166,6 @@ in
         haskellPackages.dhall-json
 
         # misc
-        bazel
         perf-tools
         protobuf
 

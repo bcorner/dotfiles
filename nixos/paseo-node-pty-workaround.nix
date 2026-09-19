@@ -1,4 +1,5 @@
 {paseo}:
+# Paseo's traced runtime omits node-pty's native prebuilds at this pin.
 paseo.overrideAttrs (oldAttrs: {
   postInstall =
     (oldAttrs.postInstall or "")

@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }: {
   imports = [
@@ -30,6 +31,7 @@
     ./github-agent-runner.nix
     ./gitea-runner.nix
     ./gitea.nix
+    ./google-messages.nix
     ./gnome.nix
     ./home-assistant.nix
     ./hermes-agent.nix
@@ -44,6 +46,7 @@
     ./laptop.nix
     ./nix.nix
     ./notifications-tray-icon.nix
+    ./ntfy.nix
     ./nvidia.nix
     ./options.nix
     ./paseo.nix
@@ -77,6 +80,10 @@
 
   config = lib.mkMerge [
     {
+      environment.systemPackages = with pkgs; [
+        roborock-control
+        rofi-roborock
+      ];
       system.autoUpgrade.flake = "github:colonelpanic8/dotfiles?dir=nixos#${config.networking.hostName}";
     }
     (lib.mkIf config.services.rumno.enable {

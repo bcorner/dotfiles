@@ -31,6 +31,7 @@ in {
   myModules.gitea-runner.enable = false;
   myModules.vscode.enable = true;
   myModules.kat.enable = true;
+  myModules.ntfy.enable = true;
   myModules.nvidia.enable = true;
   myModules.hyprland.ultrawideRefreshRate = 99.98;
   environment.systemPackages = [pkgs.wayvnc];
@@ -73,6 +74,9 @@ in {
   # This also enables v4l2loopback
   programs.droidcam.enable = true;
 
+  # The SN770 migration never completed: its ESP still carries the UUID cloned
+  # from the SATA rescue disk, and its root holds a stale store copy. Boot from
+  # the Intel 660p until the migration is redone offline.
   fileSystems."/" = {
     device = "/dev/disk/by-uuid/64a7c1f5-727a-413c-81a2-cb108728cff6";
     fsType = "ext4";
@@ -83,9 +87,9 @@ in {
     fsType = "vfat";
   };
 
-  # Former system root; keep it read-only until its ext4 errors are repaired.
-  fileSystems."/mnt/old-nixos" = {
-    device = "/dev/disk/by-id/nvme-WD_BLACK_SN770_1TB_233216802763-part1";
+  # Partial SN770 migration target; keep it inspectable but never required.
+  fileSystems."/mnt/sn770-nixos" = {
+    device = "/dev/disk/by-uuid/8f024ed1-116e-48cf-a229-1d6aaf978cad";
     fsType = "ext4";
     options = [
       "ro"

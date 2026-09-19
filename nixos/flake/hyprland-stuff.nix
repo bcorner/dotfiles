@@ -9,12 +9,23 @@
   # GCC 15 ICEs while compiling Hyprland 0.55's ConfigManager. GCC 16 builds
   # the unmodified source, avoiding the old Clang-only source compatibility patch.
   hyprlandStdenv = pkgs.gcc16Stdenv;
-  baseHyprlandPackage = hyprlandInput.packages.${system}.hyprland.override {
-    stdenv = hyprlandStdenv;
-    hyprland-guiutils = pkgs.hyprland-guiutils.override {
+  hyprlockPackage = inputs.hyprlock.packages.${system}.default;
+  baseHyprlandPackage =
+    (hyprlandInput.packages.${system}.hyprland.override {
       stdenv = hyprlandStdenv;
-    };
-  };
+      hyprland-guiutils = hyprlandInput.inputs.hyprland-guiutils.packages.${system}.default.override {
+        stdenv = hyprlandStdenv;
+      };
+    }).overrideAttrs (old: {
+      # The 0.56.2 release branch rejects glaze 8 even though main accepts it,
+      # while the release's own pinned nixpkgs already packages glaze 8.
+      postPatch =
+        (old.postPatch or "")
+        + ''
+          substituteInPlace CMakeLists.txt \
+            --replace-fail 'find_package(glaze 7...<8 QUIET)' 'find_package(glaze QUIET)'
+        '';
+    });
   hyprlandPluginsForBase = pkgs.callPackage "${pkgs.path}/pkgs/applications/window-managers/hyprwm/hyprland-plugins" {
     hyprland = baseHyprlandPackage;
   };
@@ -209,12 +220,12 @@
   hyprexpo = inputs.hyprexpo.packages.${system}.hyprexpo;
   hyprwinview = hyprlandPluginsForBase.mkHyprlandPlugin {
     pluginName = "hyprwinview";
-    version = "0.1.0";
+    version = "0.2.0";
     src = inputs.hyprwinview;
     inherit (baseHyprlandPackage) nativeBuildInputs;
     buildInputs = [pkgs.librsvg];
     meta = {
-      description = "A window overview plugin for Hyprland";
+      description = "Window and workspace overviews for Hyprland";
       homepage = "https://github.com/colonelpanic8/hyprwinview";
       license = lib.licenses.bsd3;
       platforms = lib.platforms.linux;
@@ -396,7 +407,7 @@
     hyprpaper
     neowall
     hypridle
-    hyprlock
+    hyprlockPackage
     hyprcursor
     wl-clipboard
     wtype
@@ -456,6 +467,7 @@ in {
     hyprWorkspaceHistory
     hyprglass
     hyprlandConfigSyntax
+    hyprlockPackage
     hyprlandPackage
     hyprlandPluginPackages
     hyprlandStuff
