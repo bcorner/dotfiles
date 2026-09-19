@@ -4,6 +4,7 @@
 (setq native-comp-always-compile t)
 (setq load-no-native t)
 (setq no-native-compile t)
+(setq load-prefer-newer t)
 
 (defvar imalison:do-benchmark nil)
 
@@ -42,7 +43,7 @@
     (dolist (q elpaca--queues)
       (dolist (entry (elpaca-q<-elpacas q))
         (let* ((p (cdr entry))
-               (s (elpaca<-status p)))
+               (s (elpaca--status p)))
           (unless (memq s '(finished activated))
             (push (format "%s(%s)" (elpaca<-id p) s) bad)))))
     (when bad
@@ -119,7 +120,6 @@
 
 (defvar imalison:kat-mode nil)
 (setq custom-file "~/.emacs.d/custom-before.el")
-(setq load-prefer-newer t)
 
 ;; Magit 4.5 and Vertico 2.8 use `set-local', which is native in Emacs 31
 ;; and provided by recent compat releases.  Keep Emacs 30 usable even if
@@ -160,9 +160,6 @@
 ;; Some split packages fall through the active menus in this config. Give
 ;; Elpaca an explicit source so startup doesn't get stuck on recipe lookup or
 ;; stale branch-mapped clones.
-(elpaca `(queue :host github :repo "emacs-straight/queue"
-                :branch "master"
-                :protocol https))
 (elpaca `(with-editor :host github :repo "magit/with-editor"
                       :branch "main"
                       :protocol https))

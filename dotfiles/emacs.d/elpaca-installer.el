@@ -2,19 +2,15 @@
 (defvar elpaca-installer-version 0.12)
 
 (defun elpaca-installer--state-root ()
-  "Return a writable root for Elpaca state."
-  (let* ((preferred user-emacs-directory)
-         (fallback (expand-file-name
-                    "emacs/"
-                    (or (getenv "XDG_STATE_HOME")
-                        (expand-file-name "~/.local/state/")))))
-    (condition-case nil
-        (progn
-          (make-directory preferred t)
-          preferred)
-      (file-error
-       (make-directory fallback t)
-       fallback))))
+  "Return the per-user root for mutable Emacs state."
+  (let* ((xdg-state-home (getenv "XDG_STATE_HOME"))
+         (state-home
+          (if (and xdg-state-home (not (equal xdg-state-home "")))
+              xdg-state-home
+            (expand-file-name "~/.local/state/")))
+         (root (expand-file-name "emacs/" state-home)))
+    (make-directory root t)
+    root))
 
 (defvar elpaca-directory
   (expand-file-name "elpaca/" (elpaca-installer--state-root)))

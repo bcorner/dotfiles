@@ -1424,10 +1424,7 @@ Paradox is a package.el extension. I have no use for it now that I use straight.
 #+END_SRC
 ** load-dir
 #+BEGIN_SRC emacs-lisp
-(elpaca `(load-dir :host github :repo "emacs-straight/load-dir"
-                   :branch "master"
-                   :protocol https
-                   :wait t))
+(elpaca `(load-dir :wait t))
 (use-package load-dir
   :ensure nil
   :demand t
@@ -2111,13 +2108,15 @@ bind-key and global-set-key forms.
       company-yasnippet)
 
     (setq company-idle-delay .25)
-    (use-package company-prescient
-      :demand t
-      :config (company-prescient-mode +1))
     (global-company-mode)
     (diminish 'company-mode))
   :init
   (add-hook 'prog-mode-hook (lambda () (company-mode t))))
+
+(use-package company-prescient
+  :after company
+  :demand t
+  :config (company-prescient-mode +1))
 #+END_SRC
 *** company-flx
 #+BEGIN_SRC emacs-lisp
@@ -2307,17 +2306,17 @@ bind-key and global-set-key forms.
 	  :disabled t
 	  :config (flycheck-package-setup))
 
-	(use-package flycheck-cask
-	  :after flycheck
-	  :config
-	  (add-hook 'flycheck-mode-hook #'flycheck-cask-setup))
-
 	(add-to-list 'flycheck-emacs-lisp-checkdoc-variables
 				 'sentence-end-double-space)
 	(setq-default flycheck-disabled-checkers '(rust-cargo rust rust-clippy))
 	(setq flycheck-display-errors-delay 10000)
 	(global-flycheck-mode))
   :diminish flycheck-mode)
+
+(use-package flycheck-cask
+  :after flycheck
+  :config
+  (add-hook 'flycheck-mode-hook #'flycheck-cask-setup))
 #+END_SRC
 * auth-source
 #+begin_src emacs-lisp

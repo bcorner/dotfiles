@@ -51,7 +51,16 @@
   in
     lib.elemAt parts 0;
 
-  isExcluded = rel: lib.elem (firstComponent rel) excludedTop;
+  paseoManagedSkillPrefixes = [
+    "agents/skills/paseo-help/"
+    "agents/skills/paseo-plugin/"
+  ];
+  claudeSkillsRel = "claude/skills";
+
+  isExcluded = rel:
+    lib.elem (firstComponent rel) excludedTop
+    || rel == claudeSkillsRel
+    || lib.any (prefix: lib.hasPrefix prefix rel) paseoManagedSkillPrefixes;
 
   listFilesRec = dir: let
     entries = builtins.readDir dir;
@@ -105,11 +114,10 @@ in {
   home.file =
     builtins.listToAttrs (map mkManaged managedRelFiles);
 
-  xdg.configFile =
-    builtins.listToAttrs (
-      (map mkConfigDir configDirNames)
-      ++ (map mkConfigFile configFileNames)
-    );
+  xdg.configFile = builtins.listToAttrs (
+    (map mkConfigDir configDirNames)
+    ++ (map mkConfigFile configFileNames)
+  );
 
   myModules.codexGeneratedSkills.enable = true;
   myModules.codexGeneratedSkills.sourceCodexDir = "${srcCodex}";
@@ -122,10 +130,9 @@ in {
     then pkgs.computer-use-linux
     else null;
 
-  # Home Manager directory links for .emacs.d resolve through the store on this
-  # machine, which breaks Elpaca's writable state under ~/.emacs.d/elpaca.
-  # Manage placement here instead so ~/.emacs.d always points at the live
-  # worktree checkout.
+  # Keep the shared, editable Emacs configuration pointed at the live checkout.
+  # Mutable Elpaca checkouts, caches, and builds live in each user's XDG state
+  # directory rather than beneath this shared directory.
   home.activation.linkEmacsDotdir = lib.hm.dag.entryAfter ["writeBoundary"] ''
     if [ -L "$HOME/.emacs.d" ] || [ ! -e "$HOME/.emacs.d" ]; then
       rm -f "$HOME/.emacs.d"
@@ -133,5 +140,25 @@ in {
     else
       echo "Skipping ~/.emacs.d relink because it is not a symlink" >&2
     fi
+  '';
+
+  home.activation.linkClaudeSkills = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    skills_dir="$HOME/.claude/skills"
+    if [ -L "$skills_dir" ]; then
+      rm -f "$skills_dir"
+    fi
+    mkdir -p "$skills_dir"
+
+    for skill in "${worktreeDotfiles}/agents/skills"/*; do
+      [ -d "$skill" ] || continue
+      [ ! -e "$skill/.paseo-managed-files.json" ] || continue
+
+      target="$skills_dir/''${skill##*/}"
+      if [ -L "$target" ] || [ ! -e "$target" ]; then
+        ln -sfn "$skill" "$target"
+      else
+        echo "Skipping $target because it is not a symlink" >&2
+      fi
+    done
   '';
 }
