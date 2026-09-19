@@ -39,6 +39,7 @@
     bat
   ];
   myModules.desktop.enable = false;
+  myModules.googleMessages.enable = false;
   myModules.taffybar.enable = false;
   myModules.plasma.enable = false;
   imalison.nixOverlay.enable = false;
