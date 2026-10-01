@@ -14,11 +14,11 @@ in {
         default = 5050;
       };
       host-string = mkOption {
-        type = types.string;
+        type = types.str;
         default = "0.0.0.0";
       };
       path = mkOption {
-        type = types.string;
+        type = types.str;
         default = "/";
       };
     };
@@ -27,10 +27,15 @@ in {
   config = mkIf cfg.enable {
     age.secrets."cache-priv-key.pem".file = ./secrets/cache-priv-key.pem.age;
 
-    services.nix-serve = {
+    # harmonia rather than nix-serve: nix-serve's prefork workers were each
+    # held by one slow client's parallel downloads, stalling every host.
+    services.harmonia.cache = {
       enable = true;
-      secretKeyFile = config.age.secrets."cache-priv-key.pem".path;
-      port = cfg.port;
+      signKeyPaths = [config.age.secrets."cache-priv-key.pem".path];
+      settings = {
+        bind = "${cfg.host-string}:${toString cfg.port}";
+        priority = 30;
+      };
     };
   };
 }

@@ -1,6 +1,8 @@
 let
   keys = import ../keys.nix;
 in {
+  "dawarich-secret-key-base.age".publicKeys = keys.agenixKeys;
+  "google-places-api-key.age".publicKeys = keys.agenixKeys;
   "gpg-keys.age".publicKeys = keys.agenixKeys;
   "gpg-passphrase.age".publicKeys = keys.agenixKeys;
   "gws-client-secret.json.age".publicKeys = keys.agenixKeys;
@@ -37,4 +39,6 @@ in {
   "hermes-environment.age".publicKeys = keys.agenixKeys;
   "google-messages-bridge-api-token.age".publicKeys = keys.agenixKeys;
   "google-messages-bridge-storage-key.age".publicKeys = keys.agenixKeys;
+  "whatsapp-bridge-api-token.age".publicKeys = keys.agenixKeys;
+  "whatsapp-bridge-storage-key.age".publicKeys = keys.agenixKeys;
 }

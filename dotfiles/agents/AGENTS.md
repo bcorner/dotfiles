@@ -1,21 +1,14 @@
 # Agentic Session Preferences
 
-## Delegation, model, and effort selection
-
-- Before delegating work to a subagent, choosing a model or effort level, or
-  answering a question about model routing, read
-  `/srv/dotfiles/dotfiles/agents/DELEGATION.md` completely and follow it. It
-  covers when to delegate, which model tier to pick, effort levels, provider
-  preference, and the `[1m]` context-window variants.
-
 ## Paseo
 Paseo is an agentic development environment and its currently my daily driver
 for running agents.
 
 - Unless the user or task explicitly says otherwise, start every agent session
   or worker created by Paseo in the provider's full-permissions mode (Codex:
-  `full-access`
-- VERY IMPORTANT: ALWAYS use paseo subagents over native subagents when they are
+  `full-access`).
+- VERY IMPORTANT: when delegating, ALWAYS spawn subagents through the Paseo MCP
+  tools (e.g. `create_agent`) instead of native subagents whenever they are
   available.
 - Give every Paseo-managed subagent a self-contained initial prompt. It does not
   inherit the parent's full conversation automatically.
@@ -75,8 +68,8 @@ for running agents.
   branch is pushed to, such as `colonelpanic8/rmk` (used by `glove80-rmk`).
   There the warning above is all you get.
 - Known stacks: `~/projects/paseo-assembly` (see `./project-guides/paseo-assembly.md`),
-  `~/Projects/t3code-assembly` (see `./project-guides/t3code-assembly.md`),
-  `~/Projects/rmk-assembly`.
+  `~/projects/t3code-assembly` (see `./project-guides/t3code-assembly.md`),
+  `~/projects/rmk-assembly`.
 
 ## GitHub pull requests
 - Default to creating pull requests as ready for review, not drafts.
