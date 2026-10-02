@@ -125,7 +125,12 @@
           t3code =
             (import "${inputs.t3code-integration}/nix/package.nix" {
               buildCommit = inputs.t3code-integration.rev or "";
-              pkgs = final;
+              pkgs =
+                final
+                // {
+                  # The pinned Nix recipe selects 41, but the desktop app requires 43.
+                  electron_41 = final.electron_43;
+                };
               self = inputs.t3code-integration;
             }).client;
         })
