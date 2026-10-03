@@ -9,7 +9,7 @@
     ../configuration.nix
   ];
   services.xserver.enable = true;
-  services.envfs.enable = false;
+  services.envfs.enable = true;
   services.tailscale.enable = true;
   myModules.primaryUser = "ben";
   services.paseo.listenAddress = lib.mkForce "100.85.161.82";
