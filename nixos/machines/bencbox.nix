@@ -57,6 +57,8 @@
   home-manager.sharedModules = [
     {
       home.stateVersion = "22.05";
+      # Windows handles removable drives for this WSL host.
+      services.udiskie.enable = lib.mkForce false;
     }
   ];
 
