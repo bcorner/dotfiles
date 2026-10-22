@@ -4,88 +4,104 @@
   pkgs,
   ...
 }: let
-  fleetHosts = [
-    "jay-lenovo"
-    "jimi-hendnix"
-    "mac-demarco-mini"
-    "ryzen-shine"
-    "strixi-minaj"
+  environments = import ../t3code-fleet.nix;
+  keys = import ../keys.nix;
+  credentialPath = config.age.secrets.t3code-managed-access-token.path;
+  registryPath = "${config.xdg.configHome}/t3code/managed-connections.json";
+  family = lib.optionalAttrs (config.home.username == "imalison") (import ../t3code-family.nix);
+  familySecret = member: "t3code-managed-access-token.${member.hostName}";
+  knownHosts = pkgs.writeText "t3code-family-known-hosts" (
+    lib.concatStringsSep "\n" (lib.mapAttrsToList (_: member: "${member.sshHost} ${member.hostKey}") family) + "\n"
+  );
+  sshArguments = member: [
+    "${pkgs.openssh}/bin/ssh"
+    "-N"
+    "-T"
+    "-o"
+    "BatchMode=yes"
+    "-o"
+    "ExitOnForwardFailure=yes"
+    "-o"
+    "ServerAliveInterval=30"
+    "-o"
+    "ServerAliveCountMax=3"
+    "-o"
+    "StrictHostKeyChecking=yes"
+    "-o"
+    "UserKnownHostsFile=${knownHosts}"
+    "-L"
+    "127.0.0.1:${toString member.localPort}:127.0.0.1:3774"
+    "${member.sshUser}@${member.sshHost}"
   ];
-  magicDnsSuffix = "taileb3aad.ts.net";
-  connections =
-    map (host: let
-      authority = "${host}.${magicDnsSuffix}";
-    in {
-      environmentId = "fleet:${host}";
-      label = host;
-      httpBaseUrl = "https://${authority}/";
-      wsBaseUrl = "wss://${authority}/";
-    })
-    fleetHosts;
-  connectionsJson = builtins.toJSON connections;
-  configuredSecretPath = config.age.secrets.paseo-password-environment.path;
-  configDirectory = "${config.xdg.configHome}/t3code";
-  registryPath = "${configDirectory}/managed-connections.json";
-  environmentPath = "${configDirectory}/managed-access.env";
-  renderConfiguration = pkgs.writeShellScript "render-t3code-managed-connections" ''
-    set -eu
-
-    secret_file=${configuredSecretPath}
-    ${lib.optionalString pkgs.stdenv.isDarwin ''
-      /bin/wait4path "$secret_file"
-    ''}
-    password_line="$(${pkgs.gnugrep}/bin/grep -m1 '^PASEO_PASSWORD=' "$secret_file")"
-    password="''${password_line#PASEO_PASSWORD=}"
-    if [ -z "$password" ]; then
-      echo "Fleet credential secret is empty" >&2
-      exit 1
-    fi
-
-    token="$(printf 't3code-managed-access:%s' "$password" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
-    config_dir=${lib.escapeShellArg configDirectory}
-    registry_path=${lib.escapeShellArg registryPath}
-    environment_path=${lib.escapeShellArg environmentPath}
-    mkdir -p "$config_dir"
-
-    registry_temporary="$(${pkgs.coreutils}/bin/mktemp "$config_dir/.managed-connections.json.XXXXXX")"
-    environment_temporary="$(${pkgs.coreutils}/bin/mktemp "$config_dir/.managed-access.env.XXXXXX")"
-    trap 'rm -f "$registry_temporary" "$environment_temporary"' EXIT
-
-    ${pkgs.jq}/bin/jq -n \
-      --arg token "$token" \
-      --argjson connections ${lib.escapeShellArg connectionsJson} \
-      '{version: 1, connections: ($connections | map(. + {token: $token}))}' \
-      > "$registry_temporary"
-    printf 'T3CODE_MANAGED_ACCESS_TOKEN=%s\n' "$token" > "$environment_temporary"
-    chmod 0600 "$registry_temporary" "$environment_temporary"
-    mv "$registry_temporary" "$registry_path"
-    mv "$environment_temporary" "$environment_path"
-    trap - EXIT
-  '';
 in
   lib.mkIf (lib.elem config.home.username ["imalison" "kat"]) {
+    age.secrets =
+      {
+        t3code-managed-access-token = {
+          file = ../../nixos/secrets/t3code-managed-access-token.age;
+          # agenix keeps the decrypted bytes in its runtime directory; this is a symlink.
+          path = "${config.xdg.stateHome}/t3code/managed-access-token";
+        };
+      }
+      // lib.mapAttrs' (_: member:
+        lib.nameValuePair (familySecret member) {
+          file = ../../nixos/secrets + "/${familySecret member}.age";
+          path = "${config.xdg.stateHome}/t3code/managed-access-token.${member.hostName}";
+        })
+      family;
+
+    systemd.user.services = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (lib.mapAttrs' (name: member:
+      lib.nameValuePair "t3code-family-${name}" {
+        Unit.Description = "T3 Code connection to ${member.label}'s machine";
+        Service = {
+          ExecStart = lib.escapeShellArgs (sshArguments member);
+          Restart = "always";
+          RestartSec = 5;
+        };
+        Install.WantedBy = ["default.target"];
+      })
+    family);
+    launchd.agents = lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin (lib.mapAttrs' (name: member:
+      lib.nameValuePair "t3code-family-${name}" {
+        enable = true;
+        config = {
+          ProgramArguments = sshArguments member;
+          RunAtLoad = true;
+          KeepAlive = true;
+          ThrottleInterval = 5;
+          StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/t3code-family-${name}.log";
+        };
+      })
+    family);
+
     home.sessionVariables.T3CODE_MANAGED_CONNECTIONS_FILE = registryPath;
-
-    systemd.user.services.t3code-managed-connections = lib.mkIf pkgs.stdenv.isLinux {
-      Unit = {
-        Description = "Render the agenix-backed T3 Code fleet configuration";
-        After = ["agenix.service"];
-      };
-      Install.WantedBy = ["default.target"];
-      Service = {
-        Type = "oneshot";
-        ExecStart = "${renderConfiguration}";
+    xdg.configFile."t3code/environment-groups.json".text = builtins.toJSON {
+      version = 1;
+      groups = import ../t3code-environment-groups.nix;
+    };
+    xdg.configFile."t3code/managed-connections.json" = {
+      force = true;
+      text = builtins.toJSON {
+        version = 1;
+        connections =
+          map (member: member // {token."$file" = credentialPath;}) environments
+          ++ lib.mapAttrsToList (_: member: {
+            environmentId = "fleet:${member.hostName}";
+            label = member.hostName;
+            httpBaseUrl = "http://127.0.0.1:${toString member.localPort}/";
+            wsBaseUrl = "ws://127.0.0.1:${toString member.localPort}/";
+            token."$file" = config.age.secrets.${familySecret member}.path;
+          })
+          family;
       };
     };
+    xdg.configFile."t3code/fleet-enrollment-recipients".text =
+      lib.concatStringsSep "\n" (keys.agenixKeys ++ keys.t3codeFleetEnrollmentRecipients) + "\n";
 
-    launchd.agents.t3code-managed-connections = lib.mkIf pkgs.stdenv.isDarwin {
-      enable = true;
-      domain = "user";
-      config = {
-        ProgramArguments = ["${renderConfiguration}"];
-        RunAtLoad = true;
-        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/t3code-managed-connections.log";
-        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/t3code-managed-connections.err.log";
-      };
-    };
+    home.activation.removeLegacyT3FleetEnvironment = lib.hm.dag.entryAfter ["linkGeneration"] ''
+      run ${pkgs.coreutils}/bin/rm -f ${lib.escapeShellArg "${config.xdg.configHome}/t3code/managed-access.env"}
+      for backup in ${lib.escapeShellArg "${registryPath}.hm-backup"} ${lib.escapeShellArg "${registryPath}.hm-backup"}.*; do
+        run ${pkgs.coreutils}/bin/rm -f -- "$backup"
+      done
+    '';
   }

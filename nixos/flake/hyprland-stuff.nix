@@ -220,7 +220,7 @@
   hyprexpo = inputs.hyprexpo.packages.${system}.hyprexpo;
   hyprwinview = hyprlandPluginsForBase.mkHyprlandPlugin {
     pluginName = "hyprwinview";
-    version = "0.2.0";
+    version = lib.strings.trim (builtins.readFile "${inputs.hyprwinview}/VERSION");
     src = inputs.hyprwinview;
     inherit (baseHyprlandPackage) nativeBuildInputs;
     buildInputs = [pkgs.librsvg];
@@ -413,8 +413,9 @@
     wtype
     cliphist
     grim
+    grimblast
     slurp
-    swappy
+    satty
     nwg-displays
     hyprsaver
     ddcutil

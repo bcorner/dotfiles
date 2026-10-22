@@ -16,6 +16,7 @@ in {
     ../configuration.nix
     ../dawarich-jimi.nix
     ../vaultwarden-jimi.nix
+    ../rocket-sense-jimi.nix
   ];
 
   services.macos-ventura = {
@@ -25,6 +26,12 @@ in {
   };
 
   features.full.enable = true;
+  nix.gc = {
+    automatic = true;
+    dates = "daily";
+    options = "--delete-older-than 7d";
+  };
+  nix.settings.auto-optimise-store = true;
   myModules.taffybar.aiUsageMode = "both";
   myModules.cache-server = {
     enable = true;
@@ -58,6 +65,7 @@ in {
   services.k3s.enable = lib.mkForce false;
 
   networking.hostName = "jimi-hendnix";
+  networking.networkmanager.wifi.powersave = false;
   myModules.hostIdentity = {
     emoticon = "🐩";
     tmux.background = "#db2777";
@@ -72,26 +80,24 @@ in {
   boot.loader.systemd-boot.enable = true;
 
   hardware.nvidia.modesetting.enable = true;
+  hardware.nvidia.moduleParams.nvidia.NVreg_EnableResizableBar = 1;
 
   # This also enables v4l2loopback
   programs.droidcam.enable = true;
 
-  # The SN770 migration never completed: its ESP still carries the UUID cloned
-  # from the SATA rescue disk, and its root holds a stale store copy. Boot from
-  # the Intel 660p until the migration is redone offline.
   fileSystems."/" = {
-    device = "/dev/disk/by-uuid/64a7c1f5-727a-413c-81a2-cb108728cff6";
+    device = "/dev/disk/by-uuid/31030df2-0431-4309-88f0-5110205397a3";
     fsType = "ext4";
   };
 
   fileSystems."/boot" = {
-    device = "/dev/disk/by-uuid/EE25-DC15";
+    device = "/dev/disk/by-uuid/30D8-975B";
     fsType = "vfat";
   };
 
-  # Partial SN770 migration target; keep it inspectable but never required.
-  fileSystems."/mnt/sn770-nixos" = {
-    device = "/dev/disk/by-uuid/8f024ed1-116e-48cf-a229-1d6aaf978cad";
+  # Previous root on the Intel 660p, kept as a read-only rollback copy.
+  fileSystems."/mnt/intel-root" = {
+    device = "/dev/disk/by-uuid/64a7c1f5-727a-413c-81a2-cb108728cff6";
     fsType = "ext4";
     options = [
       "ro"
@@ -131,7 +137,7 @@ in {
     ];
   };
 
-  # Prefer the SN770; the Intel 660p is QLC and shares its device with /.
+  # Prefer the SN770 over the QLC Intel 660p.
   swapDevices = [
     {
       device = "/dev/disk/by-uuid/598e9aa1-4940-4410-a2fa-3dfd8b7d2c0d";

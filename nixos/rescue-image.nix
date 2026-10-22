@@ -22,10 +22,18 @@
       Hyprland starts automatically. Super+Shift+Return opens Ghostty.
       Super+P opens the application launcher.
 
-    Installer and rescue shell
+    Graphical family installer
+      Open Install System from the application launcher, or run `family-installer`.
+      Choose Another person for a family account. The target uses the pinned
+      family profile, not this rescue system's users, credentials, or desktop.
+      Read /etc/nixos-family-installer/README.md before installing. Agents must
+      also read /etc/nixos-family-installer/AGENTS.md.
+      Confirm the destination disk before Install. Do not erase the rescue USB.
+
+    Rescue shell and remote help
       Switch to a console with Ctrl+Alt+F2. The rescue user is `imalison` and sudo
-      is passwordless. Use `nmtui` for Wi-Fi and `nixos-generate-config` plus
-      `nixos-install` for a manual NixOS installation.
+      is passwordless. Use `nmtui` for Wi-Fi. Tailscale is available for approved
+      remote support; an existing USB may already be enrolled.
 
     Persistent app state
       The writable USB installation preserves /home/imalison, /srv/dotfiles,
@@ -46,6 +54,7 @@ in
   {
     imports = [
       inputs.home-manager.nixosModules.home-manager
+      ./family-installer/modules/calamares.nix
       (
         if isIso
         then "${inputs.nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-graphical-base.nix"
@@ -61,7 +70,9 @@ in
     # package rather than pulling in the full workstation overlay set.
     nixpkgs.overlays = [
       (final: _prev: {
-        computer-use-linux = final.callPackage ./packages/computer-use-linux {};
+        computer-use-linux = final.callPackage ./packages/computer-use-linux {
+          src = inputs.computer-use-linux;
+        };
       })
     ];
 
@@ -136,6 +147,7 @@ in
     };
 
     services.openssh.enable = true;
+    services.tailscale.enable = true;
     services.gnome.gnome-keyring.enable = true;
     services.gvfs.enable = true;
     services.udisks2.enable = true;
@@ -293,13 +305,16 @@ in
       # copied onto the writable USB takes precedence and is never overwritten.
       if [ ! -e /srv/dotfiles/nixos/flake.nix ]; then
         install -d -m 0755 -o ${rescueUser} -g users /srv/dotfiles
-        cp -a ${inputs.self.outPath}/. /srv/dotfiles/
+        cp -a ${../.}/. /srv/dotfiles/
         chmod -R u+rwX,g+rX /srv/dotfiles
         chown -R ${rescueUser}:users /srv/dotfiles
       fi
 
       ln -sfn ${rescueReadme} ${rescueHome}/Desktop/RESCUE-README.txt
-      chown -h ${rescueUser}:users ${rescueHome}/Desktop/RESCUE-README.txt
+      ln -sfn /etc/nixos-family-installer/README.md ${rescueHome}/Desktop/FAMILY-INSTALLER-README.md
+      chown -h ${rescueUser}:users \
+        ${rescueHome}/Desktop/RESCUE-README.txt \
+        ${rescueHome}/Desktop/FAMILY-INSTALLER-README.md
     '';
 
     environment.etc."nixos-rescue/README".source = rescueReadme;

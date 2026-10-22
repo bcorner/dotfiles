@@ -90,6 +90,16 @@ makeEnable config "myModules.googleMessages" true {
     apiTokenFile = config.age.secrets.google-messages-bridge-api-token.path;
   };
 
+  # `gmessages` and `gmessages mcp` for scripts and agents. The default profile
+  # follows the client settings above.
+  services.google-messages-multidevice-bridge.cli = {
+    enable = true;
+    profiles.whatsapp = lib.mkIf isBridgeHost {
+      url = "https://${bridgeHost}.taileb3aad.ts.net:${toString whatsappServePort}";
+      tokenFile = config.age.secrets.whatsapp-bridge-api-token.path;
+    };
+  };
+
   # The bridge is a user service, so it only comes back after a reboot if the
   # user session outlives logout.
   users.users.imalison.linger = lib.mkIf isBridgeHost true;
@@ -129,6 +139,7 @@ makeEnable config "myModules.googleMessages" true {
 
   # Serve config is node-wide state owned by root, and re-applying it is
   # idempotent, so this also repairs the mapping if tailscaled state is reset.
+  # Concurrent writers fail with an etag mismatch, hence the shared flock.
   systemd.services.google-messages-bridge-serve = lib.mkIf isBridgeHost {
     description = "Tailscale Serve mapping for the Google Messages bridge";
     after = [ "tailscaled.service" ];
@@ -137,7 +148,11 @@ makeEnable config "myModules.googleMessages" true {
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString servePort} --set-path=/ http://127.0.0.1:${toString bridgePort}";
+      TimeoutStartSec = "60s";
+      ExecStartPre = "${config.services.tailscale.package}/bin/tailscale wait --timeout=45s";
+      ExecStart = "${pkgs.util-linux}/bin/flock /run/tailscale-serve.lock ${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString servePort} --set-path=/ http://127.0.0.1:${toString bridgePort}";
+      Restart = "on-failure";
+      RestartSec = "5s";
     };
   };
 
@@ -149,7 +164,11 @@ makeEnable config "myModules.googleMessages" true {
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString whatsappServePort} --set-path=/ http://127.0.0.1:${toString whatsappPort}";
+      TimeoutStartSec = "60s";
+      ExecStartPre = "${config.services.tailscale.package}/bin/tailscale wait --timeout=45s";
+      ExecStart = "${pkgs.util-linux}/bin/flock /run/tailscale-serve.lock ${config.services.tailscale.package}/bin/tailscale serve --bg --https=${toString whatsappServePort} --set-path=/ http://127.0.0.1:${toString whatsappPort}";
+      Restart = "on-failure";
+      RestartSec = "5s";
     };
   };
 }

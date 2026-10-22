@@ -1,27 +1,27 @@
-hostname := "mac-demarco-mini"
-target-hostname := "mac-demarco-mini-imalison"
+hostname := `scutil --get LocalHostName | tr '[:upper:]' '[:lower:]'`
 darwin-rebuild := "/run/current-system/sw/bin/darwin-rebuild"
-ssh-key := "/Users/kat/.ssh/id_ed25519"
-primary-uid := `id -u kat`
+tracked-flake-inputs := "codex-cli-nix claude-code-nix git-sync-rs keepbook git-blame-rank lastfm-edit gmcli homebrew-core homebrew-cask"
 
 build:
-	sudo -H env "GIT_SSH_COMMAND=ssh -i {{ssh-key}} -o IdentitiesOnly=yes" {{darwin-rebuild}} build --flake .#{{hostname}}
+    {{ darwin-rebuild }} build --flake .#{{ hostname }}
 
-build-imalison:
-	sudo -H env "GIT_SSH_COMMAND=ssh -i {{ssh-key}} -o IdentitiesOnly=yes" {{darwin-rebuild}} build --flake .#{{target-hostname}}
-
-check-imalison:
-	./scripts/check-imalison-ready.sh
-
+# Build as the invoking user, since root's Nix refuses a checkout it does not
+# own, then do what `darwin-rebuild switch` does after building. Activate
+# inside the primary user's launchd session so user agents load even when
+# switching over SSH.
 switch:
-	sudo launchctl asuser {{primary-uid}} env HOME=/var/root "GIT_SSH_COMMAND=ssh -i {{ssh-key}} -o IdentitiesOnly=yes" {{darwin-rebuild}} switch --flake .#{{hostname}}
-
-switch-imalison: check-imalison
-	sudo -H env "GIT_SSH_COMMAND=ssh -i {{ssh-key}} -o IdentitiesOnly=yes" {{darwin-rebuild}} switch --flake .#{{target-hostname}}
+    system="$(nix build --no-link --print-out-paths .#darwinConfigurations.{{ hostname }}.system)" && \
+    primary_user="$(nix eval --raw .#darwinConfigurations.{{ hostname }}.config.system.primaryUser)" && \
+    sudo "$(command -v nix-env)" -p /nix/var/nix/profiles/system --set "$system" && \
+    sudo launchctl asuser "$(id -u "$primary_user")" env HOME=/var/root "$system/activate"
 
 update:
-	/run/current-system/sw/bin/nix flake update
-	just switch
+    nix flake update
+    just switch
+
+bump-tracked-flakes:
+    nix flake update {{ tracked-flake-inputs }}
+    just switch
 
 update-nix-darwin:
-	nix flake lock --update-input nix-darwin
+    nix flake lock --update-input nix-darwin

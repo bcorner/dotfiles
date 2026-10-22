@@ -16,6 +16,9 @@
 ;; Fix Emacs-to-Windows clipboard handling under WSL.
 (setq select-active-regions nil)
 
+(require 'imalison-exec-path)
+(imalison:initialize-exec-path)
+
 ;; Treat this Emacs as if it was built without D-Bus.  The local
 ;; lisp/dbus.el shim prevents `require' from loading the built-in dbus.el,
 ;; whose top-level form eagerly opens system and session bus connections.
@@ -24,6 +27,8 @@
       dbus-runtime-version nil)
 
 (load-file (expand-file-name "elpaca-installer.el" user-emacs-directory))
+
+(require 'imalison-package-compat)
 
 ;; Elpaca's initial queue logger can fire during self-bootstrap before its
 ;; helper is callable under --debug-init. Keep command logging, but skip the
@@ -54,6 +59,16 @@
   (elpaca-subscribe 'failed #'imalison:elpaca-warn-failed))
 (add-hook 'elpaca-after-init-hook #'imalison:elpaca-report-unfinished)
 
+(defun imalison:elpaca-process-new-queues ()
+  "Process declarations added while completed package configurations run."
+  (when (cl-some (lambda (entry)
+                   (eq (elpaca--status (cdr entry)) 'queued))
+                 (elpaca--queued))
+    ;; Leave the current queue's finalizer before processing new declarations.
+    (run-at-time 0 nil #'elpaca-process-queues)))
+
+(add-hook 'elpaca-post-queue-hook #'imalison:elpaca-process-new-queues)
+
 (defun imalison:existing-executable (&rest candidates)
   (seq-find #'file-executable-p (delq nil candidates)))
 
@@ -77,7 +92,7 @@
 
 ;; GUI Emacs launched from the app bundle may not inherit a PATH that contains
 ;; the matching emacsclient binary.
-(when-let ((emacs-bin (imalison:emacs-bin-directory)))
+(when-let* ((emacs-bin (imalison:emacs-bin-directory)))
   (add-to-list 'exec-path emacs-bin)
   (setenv "PATH" (concat emacs-bin path-separator (or (getenv "PATH") ""))))
 (setq emacsclient-program-name
@@ -211,7 +226,7 @@
   ;; source directory under ~/.emacs.d/straight/repos/org.
   (org :type git :host github
        :repo ("colonelpanic8/org-mode" . "org")
-       :branch "my-main-2025"
+       :branch "my-main-oct-2026"
        :depth full
        :files (:defaults "lisp/*.el" ("etc/styles/" "etc/styles/*"))
        :wait t))
@@ -232,7 +247,10 @@
 (defun imalison:load-kat-mode ()
   (let ((debug-on-error t))
     (imalison:load-literate-file
-     (emacs-directory-filepath "kat-mode.org"))))
+     (emacs-directory-filepath "kat-mode.org")))
+  ;; This runs from Elpaca's completion hook. Declarations added here (or by
+  ;; package configuration) need another processing pass once it returns.
+  (imalison:elpaca-process-new-queues))
 
 ;; Install transient early to prevent built-in version from loading
 ;; Workaround: overriding-text-conversion-style is void on pgtk builds (no

@@ -29,7 +29,7 @@
 in {
   formatter = pkgs.alejandra;
 
-  apps = lib.optionalAttrs pkgs.stdenv.isLinux {
+  apps = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
     t3code-apk = inputs.t3code-integration.apps.${system}.build-android;
   };
 
@@ -38,7 +38,10 @@ in {
       colonelpanic-org-agenda-api = containerLib.containers.colonelpanic;
       kat-org-agenda-api = containerLib.containers.kat;
     }
-    // lib.optionalAttrs pkgs.stdenv.isLinux {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+      computer-use-linux = pkgs.callPackage ../packages/computer-use-linux {
+        src = inputs.computer-use-linux;
+      };
       hyprland-stuff = hyprlandStuffPackages.hyprlandStuff;
       hyprland-lua = hyprlandStuffPackages.hyprlandPackage;
       hyprNStack = hyprlandStuffPackages.hyprNStack;
@@ -60,7 +63,7 @@ in {
           touch "$out"
         '';
     }
-    // lib.optionalAttrs pkgs.stdenv.isLinux {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
       hyprNStack = hyprlandStuffPackages.hyprNStack;
       hyprexpo-lua = hyprlandStuffPackages.hyprexpo;
       hyprwinview = hyprlandStuffPackages.hyprwinview;

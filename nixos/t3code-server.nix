@@ -18,6 +18,8 @@
     users.users.imalison.linger = true;
     home-manager.sharedModules = [inputs.t3code-integration.homeManagerModules.t3code-server];
     home-manager.users.imalison = {config, ...}: {
+      imports = [../nix-shared/home-manager/t3code-server-config.nix];
+
       services.t3code = {
         enable = true;
         # The module defaults to the flake's plain `t3code` package, whose
@@ -30,16 +32,19 @@
         repositoryRoot = "/srv/dotfiles";
         tailscaleServe.port = cfg.tailscaleServePort;
         systemdTarget = cfg.startTarget;
+        inherit (cfg) settings;
       };
 
       systemd.user.services.t3code-headless = {
         Unit = {
-          After = ["t3code-managed-connections.service"];
-          Requires = ["t3code-managed-connections.service"];
+          After = ["agenix.service"];
+          Requires = ["agenix.service"];
         };
         Service = {
-          Environment = ["T3CODE_ENVIRONMENT_ID=${environmentId}"];
-          EnvironmentFile = "${config.xdg.configHome}/t3code/managed-access.env";
+          Environment = [
+            "T3CODE_ENVIRONMENT_ID=${environmentId}"
+            "T3CODE_MANAGED_ACCESS_TOKEN_FILE=${config.age.secrets.t3code-managed-access-token.path}"
+          ];
         };
       };
     };
@@ -53,6 +58,12 @@ in
           type = lib.types.port;
           default = 443;
           description = "Tailnet-only HTTPS port exposed by Tailscale Serve.";
+        };
+
+        settings = lib.mkOption {
+          type = lib.types.attrsOf lib.types.anything;
+          default = {};
+          description = "Server settings this host fixes for T3 Code; see services.t3code.settings.";
         };
 
         startTarget = lib.mkOption {

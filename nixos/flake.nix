@@ -14,18 +14,18 @@
     };
 
     pyproject-nix = {
-      url = "github:pyproject-nix/pyproject.nix/1b1485546d85f6f6c7aadb10c4923dbc09633263";
+      url = "github:pyproject-nix/pyproject.nix/ddc400a6883b042646d0940e65971bb7f7e96107";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     uv2nix = {
-      url = "github:pyproject-nix/uv2nix/0dfa8388dc855b1774f509725d8ea6806291571d";
+      url = "github:pyproject-nix/uv2nix/ddca81d752e29c063eaa914e040c3ec56ed39558";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.pyproject-nix.follows = "pyproject-nix";
     };
 
     pyproject-build-systems = {
-      url = "github:pyproject-nix/build-system-pkgs/90fde00db3687922d39d95fc591475fd0bbbcd72";
+      url = "github:pyproject-nix/build-system-pkgs/953d35d03a51dbecaf3feb3fb679eb63e90ebeb4";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.pyproject-nix.follows = "pyproject-nix";
       inputs.uv2nix.follows = "uv2nix";
@@ -69,6 +69,19 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    computer-use-linux = {
+      url = "github:agent-sh/computer-use-linux";
+      flake = false;
+    };
+
+    cua-driver = {
+      url = "github:trycua/cua";
+      inputs = {
+        nixpkgs.follows = "nixpkgs-stable";
+        flake-utils.follows = "flake-utils";
+      };
+    };
+
     git-sync-rs = {
       url = "github:colonelpanic8/git-sync-rs";
       inputs = {
@@ -78,11 +91,26 @@
       };
     };
 
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    gocryptfs-tray = {
+      url = "github:colonelpanic8/gocryptfs-tray";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+        fenix.follows = "fenix";
+      };
+    };
+
     keepbook = {
       url = "github:colonelpanic8/keepbook";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
+        fenix.follows = "fenix";
       };
     };
 
@@ -91,6 +119,7 @@
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
+        fenix.follows = "fenix";
       };
     };
 
@@ -99,6 +128,7 @@
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
+        fenix.follows = "fenix";
       };
     };
 
@@ -221,7 +251,7 @@
     };
 
     hyprwinview = {
-      url = "github:colonelpanic8/hyprwinview/08c8fffd078db094faa5b63f024f52f64e956f82";
+      url = "github:colonelpanic8/hyprwinview/babe9f8006cd7c67a3f5036c405f8d070e673c9e";
       inputs.hyprland.follows = "hyprland";
     };
 
@@ -326,6 +356,7 @@
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
+        fenix.follows = "fenix";
       };
     };
 
@@ -351,6 +382,10 @@
       url = "github:ilysenko/codex-desktop-linux/main";
     };
 
+    eva = {
+      url = "github:colonelpanic8/eva/4b58d8020f64cc0627834f572f2effe970fcbc39";
+    };
+
     paseo = {
       url = "github:colonelpanic8/paseo/assembled";
     };
@@ -374,7 +409,7 @@
     # Pin by REV, never by branch: generated assembly branches move on rebuild.
     # Each rebuild also pushes a dated tag, so older revs stay fetchable.
     t3code-integration = {
-      url = "github:colonelpanic8/t3code/1bc4e9a6506222372975326b2411663be08b510c";
+      url = "github:colonelpanic8/t3code/e3c6c6e3c3b0e2c62f40fb9c3a92fd055f939d9c";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -460,7 +495,7 @@
             inherit inputs;
             inherit machineNames;
             makeEnable = (import ./make-enable.nix) nixpkgs.lib;
-            keys = import ./keys.nix;
+            keys = import ../nix-shared/keys.nix;
             usersInfo = (import ./users.nix) {
               pkgs = {zsh = "zsh";};
               inherit keys system;

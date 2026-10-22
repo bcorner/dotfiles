@@ -39,63 +39,16 @@
   });
   repowise = pkgs.callPackage ../packages/repowise.nix {inherit inputs;};
 
-  commonPkgs = lib.filter (pkg: lib.meta.availableOn pkgs.stdenv.hostPlatform pkg) ((with pkgs; [
-      automake
-      bento4
-      bind
-      binutils
-      btop
-      cachix
-      bubblewrap
-      cmake
-      ccusage-fleet
-      dex
-      direnv
-      fd
-      ffmpeg
-      file
-      gawk
-      gcc
-      gh
-      git-fame
-      git-blame-rank
-      git-lfs
-      git-sync
-      git
-      gnumake
-      home-manager
-      htop
-      ispell
-      jq
-      just
-      keepbook
-      lsof
-      magic-wormhole-rs
-      ncdu
-      nodejs
-      fastfetch
-      neovim
-      nix-index
-      nix-search-cli
-      pass
-      patchelf
-      pstree
-      rclone
-      repowise
-      ripgrep
-      skim
-      tmux
-      zellij
-      unzip
-      wget
-      xkcdpass
-      yubikey-manager
-    ])
+  commonPkgs = lib.filter (pkg: lib.meta.availableOn pkgs.stdenv.hostPlatform pkg) (
+    (import ../portable-packages.nix {inherit pkgs;})
+    ++ [ccusage-fleet git-blame-rank keepbook repowise pkgs.git-sync]
     ++ lib.optionals (!isJayLenovo) [pkgs.bazel]
     ++ lib.optionals (gmcli != null) [gmcli]
-    ++ lib.optionals (builtins.hasAttr "git-sync-rs" pkgs) [pkgs.git-sync-rs]);
+    ++ lib.optionals (builtins.hasAttr "git-sync-rs" pkgs) [pkgs.git-sync-rs]
+  );
 
   linuxOnly = with pkgs; [
+    bubblewrap
     dex
     dpkg
     efibootmgr
@@ -105,6 +58,7 @@
     iotop
     lshw
     mesa-demos
+    patchelf
     pciutils
     pulseaudio
     python-with-my-packages
@@ -134,6 +88,6 @@ in {
 
   environment.systemPackages =
     commonPkgs
-    ++ lib.optionals pkgs.stdenv.isLinux linuxOnly
-    ++ lib.optionals pkgs.stdenv.isDarwin darwinOnly;
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux linuxOnly
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin darwinOnly;
 }

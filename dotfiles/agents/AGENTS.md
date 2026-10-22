@@ -12,6 +12,25 @@ for running agents.
   available.
 - Give every Paseo-managed subagent a self-contained initial prompt. It does not
   inherit the parent's full conversation automatically.
+- Before choosing a provider/model/account for a subagent, run
+  `~/.lib/bin/agent-delegation`. It prints any active override and remaining
+  usage for each provider.
+  - An active override wins over profile notes, skill defaults, and
+    cross-provider pairing advice. Only an explicit choice the user made in
+    the current request beats it.
+  - With no override, steer the heavy, long-running work (implementers, loop
+    workers) toward the provider with the most headroom relative to its reset
+    time. Avoid a provider above ~80% of its weekly window unless the task
+    specifically needs it, and say so when usage changed your pick.
+  - When the user states a standing preference like "use Opus for
+    implementers for now", record it with `agent-delegation set [--for 3d]
+    "<preference>"` (default expiry 7d) and clear it with
+    `agent-delegation clear`.
+
+## Memory
+- Never use Claude Code's auto-memory directory. Record durable guidance in the
+  repository it concerns (its `AGENTS.md`, `BUILDING.md`, or similar), or in
+  these dotfiles for cross-project preferences.
 
 ## Code verification
 - Run whatever formatting, lint, and type checks the project provides, at the
@@ -47,6 +66,15 @@ for running agents.
 ## Tests
 - Don't add tests that just check a box or test something superflous.
 
+## Plan documents
+- Don't write or commit plan docs (design plans, implementation plans, task
+  breakdowns, scratch notes) into the repository they're about unless the user
+  explicitly asks for them to live in the repo.
+- By default, put them under `~/plans/<repo-or-project>/`, named like
+  `YYYY-MM-DD-<topic>.md`, creating the directory if needed.
+- Point to the plan's path when you hand off or delegate, rather than copying it
+  into the repo for a subagent to find.
+
 ## Git worktrees
 - For a repository at `<repo_root>`, use worktree paths like `<repo_root>/.worktrees/<task-or-branch>`.
 - Create `.worktrees/` if needed before running `git worktree add`.
@@ -67,6 +95,12 @@ for running agents.
 - The trap is the repo that has no such `AGENTS.md`: the *fork* the assembled
   branch is pushed to, such as `colonelpanic8/rmk` (used by `glove80-rmk`).
   There the warning above is all you get.
+- Release fork-assembler stacks eagerly: once a build completes, publish,
+  repin, and activate it, then validate (audit, smoke, tests) and fix forward
+  in a follow-up rebuild. These stacks serve only the user, who accepts the
+  occasional bad release. Each stack's `BUILDING.md` spells out the order.
+- fork-assembler's own source is at `~/projects/fork-assembler`
+  (`colonelpanic8/fork-assembler`; link: `./project-links/fork-assembler`).
 - Known stacks: `~/projects/paseo-assembly` (see `./project-guides/paseo-assembly.md`),
   `~/projects/t3code-assembly` (see `./project-guides/t3code-assembly.md`),
   `~/projects/rmk-assembly`.
@@ -74,6 +108,12 @@ for running agents.
 ## GitHub pull requests
 - Default to creating pull requests as ready for review, not drafts.
 - Do not add a `[codex]` prefix or any other agent/tool prefix to pull request titles.
+
+## New projects
+- Before scaffolding a new project or repo, load the `new-project` skill
+  (`./skills/new-project/SKILL.md`): Nix flake + direnv + just, Rust via fenix,
+  Dioxus / React Native code sharing, F-Droid auto-publishing, and example repos
+  to copy from.
 
 ## This machine's system configuration
 - This system is a NixOS machine managed by the flake at `/srv/dotfiles`, which
@@ -127,6 +167,31 @@ Examples of what's stored:
 - The store is regularly updated with new entries. Always do a dynamic lookup with `pass find` rather than assuming what's there.
 - Provide credentials to tools/config at runtime via environment variables or inline `pass` usage instead of committing them.
 - Never hardcode credentials or store them in plain text files.
+- Claude/Anthropic (claude.ai) and ChatGPT/Codex/OpenAI have no passwords in
+  `pass`; they use "Continue with Google" (ivanmalison@gmail.com).
+- A login that texts a 2FA code is not a blocker: read the code yourself (see
+  "Texted 2FA codes" below).
+
+## Texted 2FA codes: fetch them yourself
+
+**You can read the user's text messages, so texted 2FA codes are never a
+reason to stop and ask the user.** When an authorized task hits an SMS/RCS 2FA,
+MFA, one-time, login, or phone-verification code, trigger it and read it
+yourself, then carry on. Ask the user only if the bridge is unavailable or the
+code never arrives.
+
+- Texts to 301-244-8534 are readable on every NixOS host through the Google
+  Messages Multi-Device Bridge: the `gmessages` CLI (preconfigured;
+  `gmessages help`) or the read-only `gmessages` MCP server.
+- When a site lets you choose where to send the code, pick text message.
+- Right after triggering the code, `gmessages wait --timeout 3m` (MCP:
+  `wait_for_message`) returns the next incoming message; narrow it with
+  `--query` or `--conversation <sender>`, and add `--since 5m` if the code may
+  already have arrived. `gmessages search --since 15m` lists recent messages.
+- Read only messages relevant to the current attempt, and never print tokens or
+  codes in logs or replies beyond what the task needs.
+- `gmessages send` texts real people from the user's phone: only when asked.
+  `--profile whatsapp` reaches the WhatsApp bridge (on jimi-hendnix only).
 
 ## Project links (local symlink index)
 - Paths in this section are relative to this file's directory (`dotfiles/agents/`).
@@ -159,3 +224,15 @@ Examples of what's stored:
 - Prefer using chrome plugins and skills for tasks that can be completed
   entirely in a browser. Use computer-use tools when the task requires broader
   desktop interaction or the Chrome plugin cannot complete it.
+- Claude in Chrome gives every session its own tab group and never removes
+  it. Before your final response, close every tab in your session's group
+  with `tabs_close_mcp` (closing the last tab removes the group), including
+  blank tabs and tabs left after a failed or abandoned attempt. Use
+  `tabs_context_mcp` with `createIfEmpty: false` to find the session's tabs;
+  never close the user's tabs or another agent's group. The final close
+  should report that the group is empty. Do not create a group to verify
+  cleanup. Leave a tab open only if the user needs to keep looking at it,
+  and say which one and why. If the browser is unavailable, report that
+  cleanup could not be completed.
+- Only call `tabs_context_mcp` with `createIfEmpty: true` when you are about
+  to use the browser. Calling it just to look creates an empty group.

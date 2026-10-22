@@ -35,6 +35,7 @@
     hyprland = baseHyprlandPackage;
     hyprland-unwrapped = final.hyprland.override {wrapRuntimeDeps = false;};
     hyprland-with-tests = final.hyprland.override {withTests = true;};
+    hyprpolkitagent = inputs.nixpkgs.legacyPackages.${system}.hyprpolkitagent;
     hyprtoolkit = prev.hyprtoolkit.overrideAttrs (_: {
       version = "0.5.4";
       src = prev.fetchFromGitHub {
@@ -251,7 +252,7 @@
   hyprexpo = inputs.hyprexpo.packages.${system}.hyprexpo;
   hyprwinview = hyprlandPluginsForBase.mkHyprlandPlugin {
     pluginName = "hyprwinview";
-    version = "0.2.0";
+    version = lib.strings.trim (builtins.readFile "${inputs.hyprwinview}/VERSION");
     src = inputs.hyprwinview;
     inherit (baseHyprlandPackage) nativeBuildInputs;
     buildInputs = [pkgs.librsvg];
@@ -502,6 +503,9 @@
       group = "video";
     };
 
+    # Capabilities must target the ELF, while session launchers keep their setup.
+    security.wrappers.Hyprland.source = lib.mkForce "${baseHyprlandPackage}/bin/.Hyprland-wrapped";
+
     programs.hyprland = {
       enable = true;
       # Keep Hyprland and plugins on a matched flake input for ABI compatibility.
@@ -669,8 +673,9 @@
         wtype # Wayland input typing
         cliphist # Clipboard history
         grim # Screenshot utility
+        grimblast # Screenshot helper
         slurp # Region selection
-        swappy # Screenshot annotation
+        satty # Screenshot annotation
         gpu-screen-recorder-gtk # GUI for gpu-screen-recorder
         screenRecord # Region/window/monitor recording + instant replay
         nwg-displays # GUI monitor arrangement

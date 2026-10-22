@@ -66,6 +66,16 @@ makeEnable config "myModules.paseo" false {
               };
               agents.providers.opencode.enabled = true;
               agents.providers.codex.command = ["${pkgs.codex}/bin/codex"];
+              # Paseo keeps the SDK's argv after these, so --chrome rides along
+              # on every session, including profiles that extend claude.
+              agents.providers.claude.command = ["${pkgs.claude-code}/bin/claude" "--chrome"];
+              agents.metadataGeneration.providers = [
+                {
+                  provider = "claude";
+                  model = "claude-haiku-5-5";
+                  thinkingOptionId = "low";
+                }
+              ];
               daemon.agentProfiles = (import ../nix-shared/paseo-favorites.nix).agentProfiles;
 
               # Live Voice reads these files fresh at the start of every call and

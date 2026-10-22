@@ -85,7 +85,11 @@ function M.setup(ctx)
     hl.plugin.load("/run/current-system/sw/lib/libhyprNStack.so")
   end
   if enable_hyprwinview and not verify_config then
-    hl.plugin.load("/run/current-system/sw/lib/libhyprwinview.so")
+    -- Resolve the store path so updates cannot reuse an old dlopen mapping.
+    local path_command = assert(io.popen("/run/current-system/sw/bin/readlink -f /run/current-system/sw/lib/libhyprwinview.so", "r"))
+    local plugin_path = path_command:read("*l")
+    path_command:close()
+    hl.plugin.load(assert(plugin_path))
   end
   if enable_hyprtasking and not enable_hyprwinview and not verify_config then
     hl.plugin.load("/run/current-system/sw/lib/libhyprtasking.so")
@@ -469,21 +473,10 @@ function M.setup(ctx)
       no_initial_focus = true,
     })
 
-    for index, match in ipairs({
-      { class = "^(flameshot)$" },
-      { title = "^(flameshot)$" },
-    }) do
-      hl.window_rule({
-        name = "flameshot-overlay-" .. tostring(index),
-        match = match,
-        float = true,
-        no_anim = true,
-        suppress_event = "fullscreen",
-      })
-    end
-    hl.layer_rule({
-      name = "flameshot-layer-overlay",
-      match = { namespace = "^(flameshot)$" },
+    hl.window_rule({
+      name = "satty",
+      match = { class = "^(com\\.gabm\\.satty)$" },
+      float = true,
       no_anim = true,
     })
 

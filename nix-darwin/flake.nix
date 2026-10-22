@@ -36,14 +36,7 @@
       url = "github:ryantm/agenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    railbird-secrets = {
-      url = "git+ssh://gitea@dev.railbird.ai:1123/railbird/secrets-flake.git";
-    };
     nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
-    brew-src = {
-      url = "github:Homebrew/brew/6.0.16";
-      flake = false;
-    };
 
     # Optional: Declarative tap management
     homebrew-core = {
@@ -86,16 +79,11 @@
     # Pin the assembled integration by revision; its flake owns packaging,
     # desktop integration, and the persistent server module.
     t3code-integration = {
-      url = "github:colonelpanic8/t3code/e542bc839fb331fcd08c3c1e3122539c46c0dc6e";
+      url = "github:colonelpanic8/t3code/f99f7b480270f853da604c39100f7e11366e8603";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
       };
-    };
-
-    paseo = {
-      url = "github:colonelpanic8/paseo/assembled";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     keepbook = {
@@ -128,326 +116,86 @@
     ...
   }: let
     libDir = ../dotfiles/lib;
-    activePrimaryUser = "kat";
-    targetPrimaryUser = "imalison";
     personalUsers = [
-      activePrimaryUser
-      targetPrimaryUser
+      "kat"
+      "imalison"
     ];
-    sharedHomeModules = [
-      ./home/common.nix
-      ./home/git-sync.nix
-      inputs.t3code-integration.homeManagerModules.t3code-server
+    baseHomeModules = [./home/common.nix];
+    personalHomeModules = [
+      ./home/personal.nix
+      ./home/desktop.nix
     ];
-    homeForUser = user: "/Users/${user}";
-    mkUserDescription = user:
-      if user == targetPrimaryUser
-      then "Ivan Malison"
-      else null;
-    mkConfiguration = {
+    # Maps each Home Manager user to the modules layered over baseHomeModules.
+    homeManagerConfiguration = {
       primaryUser,
-      enabledHomeUsers ? [primaryUser],
+      users,
+    }: {lib, ...}: {
+      home-manager = {
+        useGlobalPkgs = true;
+        useUserPackages = true;
+        backupFileExtension = "hm-backup";
+        extraSpecialArgs = {
+          inherit inputs libDir primaryUser;
+        };
+        sharedModules = baseHomeModules;
+        users = lib.mapAttrs (_: modules: {imports = modules;}) users;
+      };
+      # Home Manager refuses to activate until the user's Nix profile
+      # directory exists, which a fresh account does not have yet.
+      system.activationScripts.preActivation.text = lib.concatMapStrings (user: ''
+        /usr/bin/sudo -u ${user} /bin/mkdir -p ${homeForUser user}/.local/state/nix/profiles
+      '') (builtins.attrNames users);
+    };
+    homeForUser = user: "/Users/${user}";
+    sharedConfiguration = {
+      primaryUser,
+      manageNix ? true,
     }: {
-      pkgs,
-      lib,
       config,
+      lib,
+      pkgs,
       ...
-    }: let
-      essentialPkgs = (import ../nix-shared/system/essential.nix {inherit pkgs lib inputs;}).environment.systemPackages;
-      paseoUser = targetPrimaryUser;
-      paseoHome = "${homeForUser paseoUser}/.paseo";
-      paseoPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
-        postInstall =
-          (old.postInstall or "")
-          + ''
-            # Runtime tracing misses node-pty's dynamically loaded native files.
-            for path in {node_modules,packages/server/node_modules}/node-pty/{build/Release,prebuilds/darwin-arm64}/{pty.node,spawn-helper}; do
-              [ -f "$path" ] || continue
-              mkdir -p "$out/lib/paseo/$(dirname "$path")"
-              cp -p "$path" "$out/lib/paseo/$path"
-            done
-            node -e "require('$out/lib/paseo/packages/server/node_modules/node-pty')"
-          '';
-      });
-      paseoDesktopPackage = inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop.override {
-        paseo = paseoPackage;
-      };
-      ensurePaseoMcpInjection = import ../nix-shared/ensure-paseo-mcp-injection.nix {inherit pkgs;};
-      paseoDaemon = pkgs.writeShellScript "paseo-daemon" ''
-        set -eu
-
-        ${ensurePaseoMcpInjection} ${lib.escapeShellArg "${paseoHome}/config.json"}
-
-        secret_file='${config.age.secrets.paseo-password-environment.path}'
-        /bin/wait4path "$secret_file"
-        password_line="$(${pkgs.gnugrep}/bin/grep -m1 '^PASEO_PASSWORD=' "$secret_file")"
-        password="''${password_line#PASEO_PASSWORD=}"
-        if [ -z "$password" ]; then
-          echo "Paseo password secret is empty" >&2
-          exit 1
-        fi
-
-        tailscale_ip=""
-        attempts=0
-        while [ "$attempts" -lt 30 ]; do
-          tailscale_ip="$(${config.services.tailscale.package}/bin/tailscale ip -4 2>/dev/null | ${pkgs.coreutils}/bin/head -n 1 || true)"
-          if [ -n "$tailscale_ip" ]; then
-            break
-          fi
-          attempts=$((attempts + 1))
-          sleep 2
-        done
-        if [ -z "$tailscale_ip" ]; then
-          echo "Timed out waiting for a Tailscale IPv4 address" >&2
-          exit 1
-        fi
-
-        export PASEO_PASSWORD="$password"
-        export PASEO_LISTEN="$tailscale_ip:6767"
-        exec ${paseoPackage}/bin/paseo-server --no-relay
-      '';
-      disabledAppleSymbolicHotKey = parameters: {
-        enabled = false;
-        value = {
-          inherit parameters;
-          type = "standard";
-        };
-      };
-    in {
-      networking.hostName = "mac-demarco-mini";
-      imports = [
-        (import ./gitea-actions-runner.nix)
-        (import ./gitea-runner-external-storage.nix)
-      ];
-      age = {
-        identityPaths = [
-          "${config.users.users.${primaryUser}.home}/.ssh/id_ed25519"
-          "/etc/ssh/ssh_host_ed25519_key"
-          "/etc/ssh/ssh_host_rsa_key"
-        ];
-        secrets.gitea-runner-token.file = ../nixos/secrets/gitea-runner-token.mac-demarco-mini.age;
-        secrets.tailscale-authkey = {
-          file = ../nixos/secrets/tailscale-authkey.age;
-          owner = "root";
-          mode = "0400";
-        };
-        secrets.paseo-password-environment = {
-          file = ../nixos/secrets/paseo-password-environment.age;
-          owner = paseoUser;
-          mode = "0400";
-        };
-      };
-      services.tailscale.enable = true;
-      services.gitea-actions-runner = {
-        user = "gitea-runner";
-        instances.nix = {
-          enable = true;
-          name = config.networking.hostName;
-          url = "https://dev.railbird.ai";
-          tokenFile = config.age.secrets.gitea-runner-token.path;
-          labels = [
-            "nix-darwin-${pkgs.stdenv.hostPlatform.system}:host"
-            "macos-aarch64-darwin"
-            "nix:host"
-          ];
-          settings = {
-            cache = {
-              enabled = true;
-            };
-            host = {
-              workdir_parent = "/var/lib/gitea-runner/action-cache-dir";
-            };
-          };
-          hostPackages = with pkgs; [
-            bash
-            coreutils
-            curl
-            direnv
-            gawk
-            just
-            git-lfs
-            isort
-            git
-            gnused
-            ncdu
-            nixVersions.stable
-            nodejs
-            openssh
-            wget
-          ];
-        };
-      };
-
-      launchd.daemons.gitea-runner-nix.serviceConfig.EnvironmentVariables = {
-        XDG_CONFIG_HOME = "/var/lib/gitea-runner";
-        XDG_CACHE_HOME = "/var/lib/gitea-runner/.cache";
-        XDG_RUNTIME_DIR = "/var/lib/gitea-runner/tmp";
-      };
-      launchd.daemons.tailscaled.serviceConfig.KeepAlive = true;
-
-      launchd.daemons.tailscale-autoconnect = {
-        script = ''
-          set -euo pipefail
-
-          key_file='${config.age.secrets.tailscale-authkey.path}'
-          if [ ! -s "$key_file" ]; then
-            exit 0
-          fi
-          if [ "$(cat "$key_file")" = "DISABLED" ]; then
-            exit 0
-          fi
-
-          for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
-            state="$(${config.services.tailscale.package}/bin/tailscale status --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.BackendState // empty' || true)"
-            if [ "$state" = "Running" ]; then
-              exit 0
-            fi
-            if [ -n "$state" ]; then
-              break
-            fi
-            sleep 2
-          done
-
-          ${config.services.tailscale.package}/bin/tailscale up \
-            --auth-key "file:$key_file" \
-            --accept-dns=true \
-            --operator="${primaryUser}" \
-            --timeout=60s
-        '';
-        serviceConfig = {
-          RunAtLoad = true;
-          StartInterval = 300;
-          StandardOutPath = "/var/log/tailscale-autoconnect.log";
-          StandardErrorPath = "/var/log/tailscale-autoconnect.err.log";
-        };
-      };
-
-      launchd.daemons.paseo = {
-        serviceConfig = {
-          ProgramArguments = ["${paseoDaemon}"];
-          UserName = paseoUser;
-          GroupName = "staff";
-          WorkingDirectory = homeForUser paseoUser;
-          EnvironmentVariables = {
-            HOME = homeForUser paseoUser;
-            USER = paseoUser;
-            LOGNAME = paseoUser;
-            SHELL = "/bin/zsh";
-            NODE_ENV = "production";
-            PASEO_HOME = paseoHome;
-            PASEO_HOSTNAMES = config.networking.hostName;
-            PATH = lib.concatStringsSep ":" [
-              "${homeForUser paseoUser}/.nix-profile/bin"
-              "${homeForUser paseoUser}/.local/state/nix/profile/bin"
-              "/etc/profiles/per-user/${paseoUser}/bin"
-              "/run/current-system/sw/bin"
-              "/nix/var/nix/profiles/default/bin"
-              "/opt/homebrew/bin"
-              "/usr/local/bin"
-              "/usr/bin"
-              "/bin"
-            ];
-          };
-          RunAtLoad = true;
-          KeepAlive = true;
-          ProcessType = "Background";
-          ThrottleInterval = 10;
-          StandardOutPath = "${homeForUser paseoUser}/Library/Logs/paseo-daemon.log";
-          StandardErrorPath = "${homeForUser paseoUser}/Library/Logs/paseo-daemon.err.log";
-        };
-      };
-
+    }: {
+      imports = lib.optional manageNix ./nix.nix;
+      nix.enable = manageNix;
       system.primaryUser = primaryUser;
+      system.keyboard = {
+        enableKeyMapping = true;
+        remapCapsLockToControl = true;
+      };
+      system.defaults.NSGlobalDomain = {
+        KeyRepeat = 2;
+        InitialKeyRepeat = 15;
+      };
+      # GUI apps only see launchd's PATH, and launchctl setenv does not expand
+      # the $USER/$HOME references in systemPath.
+      launchd.user.envVariables.PATH =
+        builtins.replaceStrings ["$USER" "$HOME"] [primaryUser (homeForUser primaryUser)]
+        config.environment.systemPath;
+      environment.profiles = lib.mkForce [
+        "/etc/profiles/per-user/$USER"
+        "$HOME/.nix-profile"
+        "/run/current-system/sw"
+        "/nix/var/nix/profiles/default"
+      ];
       # The uninstaller evaluates a nested nix-darwin system whose manual build
       # still passes removed nixos-render-docs flags with current nixpkgs.
       system.tools.darwin-uninstaller.enable = false;
+
+      # SSH clients that don't forward LANG leave sessions in the C locale,
+      # which makes tmux replace non-ASCII glyphs with underscores.
+      environment.extraInit = ''
+        export LANG="''${LANG:-en_US.UTF-8}"
+      '';
 
       security.sudo.extraConfig = ''
         ${primaryUser} ALL=(ALL) NOPASSWD: ALL
       '';
 
-      system.defaults.NSGlobalDomain."com.apple.swipescrolldirection" = false;
-      system.defaults.CustomUserPreferences."com.apple.screensaver".idleTime = 0;
-      system.defaults.CustomUserPreferences."com.apple.symbolichotkeys".AppleSymbolicHotKeys = {
-        # Disable input source shortcuts that conflict with launcher usage.
-        "60" = disabledAppleSymbolicHotKey [32 49 262144];
-        "61" = disabledAppleSymbolicHotKey [32 49 786432];
-        # Disable Spotlight's Command-Space and Finder search window shortcuts.
-        "64" = disabledAppleSymbolicHotKey [32 49 1048576];
-        "65" = disabledAppleSymbolicHotKey [32 49 1572864];
-      };
-      system.defaults.screensaver.askForPassword = false;
-      system.defaults.screensaver.askForPasswordDelay = 0;
-
-      system.activationScripts.postActivation.text = ''
-        echo >&2 "current-host screensaver defaults..."
-        primary_uid="$(id -u -- ${primaryUser})"
-        if launchctl print "gui/$primary_uid" >/dev/null 2>&1; then
-          launchctl asuser "$primary_uid" sudo --user=${primaryUser} -- defaults -currentHost write com.apple.screensaver askForPassword -bool false
-          launchctl asuser "$primary_uid" sudo --user=${primaryUser} -- defaults -currentHost write com.apple.screensaver askForPasswordDelay -int 0
-          launchctl asuser "$primary_uid" sudo --user=${primaryUser} -- defaults -currentHost write com.apple.screensaver idleTime -int 0
-        else
-          echo >&2 "skipping current-host screensaver defaults; ${primaryUser} has no GUI launchd session"
-        fi
-      '';
-
-      power.sleep = {
-        computer = "never";
-        display = "never";
-        harddisk = "never";
-      };
-
-      # launchd.daemons.gitea-runner-restarter = {
-      #   serviceConfig = {
-      #     ProgramArguments = [
-      #       "/usr/bin/env"
-      #       "bash"
-      #       "-c"
-      #       ''
-      #         SERVICE_NAME="org.nixos.gitea-runner-nix"
-      #         while true; do
-      #         # Check the second column of launchctl list output for our service
-      #         EXIT_CODE=$(sudo launchctl list | grep "$SERVICE_NAME" | awk '{print $2}')
-      #         if [ -z "$EXIT_CODE" ]; then
-      #         echo "$(date): $SERVICE_NAME is running correctly. Terminating the restarter."
-      #         exit 0
-      #         else
-      #         echo "$(date): $SERVICE_NAME is not running or in error state. Attempting to restart..."
-      #         sudo launchctl bootout system/$SERVICE_NAME 2>/dev/null || true
-      #         sudo launchctl load /Library/LaunchDaemons/$SERVICE_NAME.plist
-      #         sleep 2  # Give the service some time to start
-      #         fi
-      #         done
-      #       ''
-      #     ];
-      #     RunAtLoad = true;
-      #     ThrottleInterval = 300;
-      #   };
-      # };
-
-      launchd.daemons.does-anything-work = {
-        serviceConfig = {
-          ProgramArguments = ["/usr/bin/env" "bash" "-c" "date > /var/log/does-anything-work"];
-          RunAtLoad = true;
-        };
-      };
-
       nixpkgs.overlays = [
         (import ../nix-shared/overlays)
         inputs.t3code-integration.overlays.client
-        (final: prev: let
-          previousUnwrapped = prev.t3code.unwrapped;
-          unwrapped = previousUnwrapped.overrideAttrs (_finalAttrs: previousAttrs: {
-            pnpmDeps = final.lib.overrideDerivation previousAttrs.pnpmDeps (_: {
-              outputHash = "sha256-VdE+ycyF/UvPr2urLlKOt/Aa5t2WqKcidr2D0sH0eVI=";
-            });
-          });
-        in {
-          t3code = prev.t3code.overrideAttrs (previousAttrs: {
-            paths = [unwrapped];
-            passthru = (previousAttrs.passthru or {}) // {inherit unwrapped;};
-          });
-        })
+        (import ./t3code-overlay.nix)
         # Use codex and claude-code from dedicated flakes with cachix
         (final: prev: {
           bazel = inputs.nixpkgs-bazel.legacyPackages.${prev.stdenv.hostPlatform.system}.bazel;
@@ -491,20 +239,44 @@
           });
         })
       ];
-      environment.systemPackages =
-        essentialPkgs
-        ++ [
-          pkgs.gnupg
-          paseoPackage
-          paseoDesktopPackage
-        ];
 
       nixpkgs.config.allowUnfree = true;
 
-      # Install GUI-visible fonts into /Library/Fonts/Nix Fonts.
-      fonts.packages = with pkgs; [
-        nerd-fonts.jetbrains-mono
-      ];
+      programs.direnv.enable = true;
+
+      # Set Git commit hash for darwin-version.
+      system.configurationRevision = self.rev or self.dirtyRev or null;
+
+      # Used for backwards compatibility, please read the changelog before changing
+      system.stateVersion = lib.mkDefault 4;
+
+      # The platform the configuration will be used on.
+
+      nixpkgs.hostPlatform = "aarch64-darwin";
+
+      programs.zsh = {
+        enable = true;
+        enableSyntaxHighlighting = true;
+      };
+    };
+    homebrewConfiguration = {
+      primaryUser,
+      extraCasks ? [],
+      cleanup ? "zap",
+    }: {
+      config,
+      lib,
+      ...
+    }: {
+      nix-homebrew = {
+        enable = true;
+        user = primaryUser;
+        autoMigrate = true;
+        taps = {
+          "homebrew/homebrew-core" = inputs.homebrew-core;
+          "homebrew/homebrew-cask" = inputs.homebrew-cask;
+        };
+      };
 
       # Desktop apps are managed separately from the Codex and Claude Code CLIs.
       homebrew = {
@@ -514,141 +286,214 @@
           "ddcctl"
           "m1ddc"
         ];
-        casks = [
-          "claude"
-          "chatgpt"
-          "ghostty"
-          "hammerspoon"
-          "raycast"
-          "spotify"
-          "vlc"
-        ];
+        casks =
+          [
+            "claude"
+            "chatgpt"
+            "codex-app"
+            "ghostty"
+            "hammerspoon"
+            "raycast"
+            "spotify"
+            "vlc"
+          ]
+          ++ extraCasks;
         greedyCasks = true;
         onActivation = {
-          cleanup = "zap";
+          inherit cleanup;
           # Homebrew requires an explicit confirmation flag when
           # `brew bundle install` runs with `--cleanup`.
-          extraFlags = ["--force"];
+          extraFlags = lib.optionals (cleanup != "none") ["--force"];
         };
       };
+    };
+    # Run T3 Code independently of the user's GUI login session.
+    t3codeConfiguration = {
+      user,
+      tokenSecret ? "t3code-managed-access-token",
+    }: {
+      config,
+      lib,
+      pkgs,
+      ...
+    }: let
+      agentConfig = config.home-manager.users.${user}.launchd.agents.t3code-headless.config;
+      tokenFile = config.age.secrets.${tokenSecret}.path;
+      t3codeDaemon = pkgs.writeShellScript "t3code-daemon" ''
+        set -eu
 
-      # Auto upgrade nix package and the daemon service.
-      launchd.user = lib.mkIf (primaryUser == activePrimaryUser) {
-        envVariables.PATH = config.environment.systemPath;
+        attempts=0
+        while [ ! -r ${lib.escapeShellArg tokenFile} ]; do
+          if [ "$attempts" -ge 60 ]; then
+            echo "Timed out waiting for ${tokenFile}" >&2
+            exit 1
+          fi
+          attempts=$((attempts + 1))
+          sleep 1
+        done
+
+        exec ${lib.escapeShellArgs agentConfig.ProgramArguments}
+      '';
+    in {
+      age.secrets.${tokenSecret} = {
+        file = ../nixos/secrets + "/${tokenSecret}.age";
+        owner = user;
+        mode = "0400";
       };
 
-      programs.direnv.enable = true;
-
-      # Necessary for using flakes on this system.
-      nix.settings = {
-        experimental-features = "nix-command flakes";
-        # Trigger store GC before Nix consumes the machine's build headroom.
-        min-free = 10 * 1024 * 1024 * 1024;
-        max-free = 20 * 1024 * 1024 * 1024;
-        gc-reserved-space = 256 * 1024 * 1024;
-        substituters = [
-          "https://cache.nixos.org"
-          "https://codex-cli.cachix.org"
-          "https://claude-code.cachix.org"
-          "https://paseo-colonelpanic8.cachix.org"
-        ];
-        trusted-public-keys = [
-          "codex-cli.cachix.org-1:1Br3H1hHoRYG22n//cGKJOk3cQXgYobUel6O8DgSing="
-          "claude-code.cachix.org-1:YeXf2aNu7UTX8Vwrze0za1WEDS+4DuI2kVeWEE4fsRk="
-          "paseo-colonelpanic8.cachix.org-1:fxfDiskEv5JT+xX3CbXBUAWblc+234mDeodXDi7eY1k="
-        ];
+      home-manager.users.${user} = {
+        services.t3code.enable = true;
+        launchd.agents.t3code-headless.enable = lib.mkForce false;
       };
-      nix.gc = {
-        automatic = true;
-        interval = {
-          Hour = 4;
-          Minute = 15;
+
+      launchd.daemons.t3code = {
+        serviceConfig = {
+          ProgramArguments = ["${t3codeDaemon}"];
+          UserName = user;
+          GroupName = "staff";
+          WorkingDirectory = homeForUser user;
+          EnvironmentVariables =
+            agentConfig.EnvironmentVariables
+            // {
+              HOME = homeForUser user;
+              USER = user;
+              LOGNAME = user;
+              SHELL = "/bin/zsh";
+              T3CODE_ENVIRONMENT_ID = "fleet:${config.networking.hostName}";
+              T3CODE_MANAGED_ACCESS_TOKEN_FILE = tokenFile;
+            };
+          RunAtLoad = true;
+          KeepAlive = true;
+          ProcessType = "Background";
+          ThrottleInterval = 10;
+          StandardOutPath = "${homeForUser user}/Library/Logs/t3code-daemon.log";
+          StandardErrorPath = "${homeForUser user}/Library/Logs/t3code-daemon.err.log";
         };
-        options = "--delete-older-than 30d";
       };
-      nix.optimise.automatic = true;
-
-      # Set Git commit hash for darwin-version.
-      system.configurationRevision = self.rev or self.dirtyRev or null;
-
-      # Used for backwards compatibility, please read the changelog before changing
-      system.stateVersion = 4;
-
-      # The platform the configuration will be used on.
-
-      nixpkgs.hostPlatform = "aarch64-darwin";
-      users.users =
-        lib.genAttrs personalUsers (user: {
-          name = user;
-          home = homeForUser user;
-          description = mkUserDescription user;
-          openssh.authorizedKeys.keys = inputs.railbird-secrets.keys.sshClientKeys;
-        })
-        // {
-          gitea-runner = {
-            name = "gitea-runner";
-            isHidden = false;
-            home = "/Users/gitea-runner";
-            createHome = false;
-          };
+    };
+    desktopConfiguration = {
+      pkgs,
+      config,
+      lib,
+      ...
+    }: let
+      disabledAppleSymbolicHotKey = parameters: {
+        enabled = false;
+        value = {
+          inherit parameters;
+          type = "standard";
         };
+      };
+    in {
+      # T3 Code labels its environment with ComputerName.
+      networking.computerName = config.networking.hostName;
+      system.defaults.NSGlobalDomain."com.apple.swipescrolldirection" = false;
+      system.defaults.CustomUserPreferences."com.apple.symbolichotkeys".AppleSymbolicHotKeys = {
+        # Disable input source shortcuts that conflict with launcher usage.
+        "60" = disabledAppleSymbolicHotKey [32 49 262144];
+        "61" = disabledAppleSymbolicHotKey [32 49 786432];
+        # Disable Spotlight's Command-Space and Finder search window shortcuts.
+        "64" = disabledAppleSymbolicHotKey [32 49 1048576];
+        "65" = disabledAppleSymbolicHotKey [32 49 1572864];
+      };
+      environment.systemPackages = [pkgs.gnupg];
 
-      programs.zsh = {
-        enable = true;
-        enableSyntaxHighlighting = true;
-      };
-      home-manager = {
-        useGlobalPkgs = true;
-        useUserPackages = true;
-        backupFileExtension = "hm-backup";
-        extraSpecialArgs = {
-          inherit inputs libDir primaryUser;
-        };
-        sharedModules = sharedHomeModules;
-        users = lib.genAttrs enabledHomeUsers (_: {});
-      };
+      system.activationScripts.postActivation.text = lib.concatMapStringsSep "\n" (user: ''
+        user_id="$(/usr/bin/id -u ${lib.escapeShellArg user})"
+        if /usr/bin/pgrep -u "$user_id" -x Hammerspoon >/dev/null; then
+          /bin/launchctl asuser "$user_id" /usr/bin/sudo -n -u ${lib.escapeShellArg user} \
+            ${pkgs.coreutils}/bin/timeout 5 \
+            /Applications/Hammerspoon.app/Contents/Frameworks/hs/hs -q -t 2 \
+            -c 'hs.timer.doAfter(0.1, hs.reload)' </dev/null \
+            || echo "Could not reload Hammerspoon for ${user}; reload its configuration after logging in."
+        fi
+      '') (builtins.attrNames config.home-manager.users);
+
+      # Install GUI-visible fonts into /Library/Fonts/Nix Fonts.
+      fonts.packages = with pkgs; [
+        nerd-fonts.jetbrains-mono
+      ];
     };
     mkDarwinSystem = {
       primaryUser,
       enabledHomeUsers ? [primaryUser],
+      homeModules ? personalHomeModules,
+      machineModule,
+      manageNix ? true,
+      homebrewCleanup ? "zap",
+      extraCasks ? [],
+      t3codeTokenSecret ? "t3code-managed-access-token",
     }:
       nix-darwin.lib.darwinSystem {
-        modules = [
-          agenix.darwinModules.default
-          home-manager.darwinModules.home-manager
-          nix-homebrew.darwinModules.nix-homebrew
-          {
-            nix-homebrew = {
-              enable = true;
-              user = primaryUser;
-              autoMigrate = true;
-              package =
-                inputs.brew-src
-                // {
-                  name = "brew-6.0.11";
-                  version = "6.0.11";
-                };
-              taps = {
-                "homebrew/homebrew-core" = inputs.homebrew-core;
-                "homebrew/homebrew-cask" = inputs.homebrew-cask;
+        specialArgs = {inherit inputs;};
+        modules =
+          [
+            ../nix-shared/system/essential.nix
+            ./shared-checkout.nix
+            agenix.darwinModules.default
+            home-manager.darwinModules.home-manager
+            nix-homebrew.darwinModules.nix-homebrew
+            (homebrewConfiguration {
+              inherit primaryUser extraCasks;
+              cleanup = homebrewCleanup;
+            })
+            (sharedConfiguration {inherit primaryUser manageNix;})
+            (homeManagerConfiguration {
+              inherit primaryUser;
+              users = nixpkgs.lib.genAttrs enabledHomeUsers (_: homeModules);
+            })
+            desktopConfiguration
+            ./camera.nix
+            ./keep-awake.nix
+            {
+              services.keep-awake = {
+                enable = true;
+                onBattery = true;
               };
-            };
-          }
-          (mkConfiguration {inherit primaryUser enabledHomeUsers;})
-        ];
+              services.mac-camera = {
+                enable = true;
+                viewer = "ivanmalison@gmail.com";
+              };
+            }
+            machineModule
+          ]
+          ++ nixpkgs.lib.optional (t3codeTokenSecret != null) (t3codeConfiguration {
+            user = primaryUser;
+            tokenSecret = t3codeTokenSecret;
+          });
       };
   in {
-    # The default remains on the currently existing macOS account. Switch to
-    # mac-demarco-mini-imalison after the target login account and home are in
-    # place.
-    darwinConfigurations."mac-demarco-mini" = mkDarwinSystem {
-      primaryUser = activePrimaryUser;
-      enabledHomeUsers = [activePrimaryUser];
+    darwinConfigurations."kats-macbook-neo" = mkDarwinSystem {
+      primaryUser = "kat";
+      machineModule = ./machines/kats-macbook-neo.nix;
+      manageNix = false;
+      homebrewCleanup = "none";
+      homeModules = [./home/agents.nix ./home/desktop.nix];
+      t3codeTokenSecret = "t3code-managed-access-token.kats-macbook-neo";
     };
 
-    darwinConfigurations."mac-demarco-mini-imalison" = mkDarwinSystem {
-      primaryUser = targetPrimaryUser;
-      enabledHomeUsers = [targetPrimaryUser];
+    darwinConfigurations."mac-demarco-mini" = mkDarwinSystem {
+      primaryUser = "imalison";
+      enabledHomeUsers = personalUsers;
+      machineModule = ./machines/mac-demarco-mini.nix;
+    };
+
+    darwinConfigurations."alexanders-macbook-air" = mkDarwinSystem {
+      primaryUser = "alex";
+      machineModule = ./machines/alexanders-macbook-air.nix;
+      homebrewCleanup = "none";
+      extraCasks = ["google-chrome"];
+      t3codeTokenSecret = "t3code-managed-access-token.alexanders-macbook-air";
+      homeModules = [
+        ./home/agents.nix
+        ./home/desktop.nix
+        {
+          dotfiles.gitIdentity = {
+            name = "Alexander Malison";
+            email = "alexmalison@gmail.com";
+          };
+        }
+      ];
     };
 
     # Expose the package set, including overlays, for convenience.

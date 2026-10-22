@@ -76,6 +76,32 @@ On current npm versions, `npm cache clean --force` leaves the separate
 enumerate it with `npm cache npx ls` and remove the explicit listed keys with
 `npm cache npx rm <key>...`; do not delete the directory directly.
 
+For multiple pnpm store versions or older Yarn Berry caches, see
+[package cache cleanup](references/cleanup-patterns.md#package-caches). Match
+the pnpm executable to the store version before pruning.
+
+### Deduplication and ext4 reserve
+
+- After GC, `sudo -n nix-store --optimise` can reclaim duplicate live store
+  files without removing generations. On 2026-10-21 `jimi-hendnix`, it reported
+  68.9 GiB freed by hard-linking 5,804,426 files. The full scan took about
+  41 minutes, read 387 GiB, and peaked at 19.3 GiB RAM; allow for that load
+  rather than treating it as an instant cleanup.
+- For ext4, compare `df` with `tune2fs -l <verified-root-device>` before
+  attributing unavailable space to files. This host's 5% reserve held about
+  45 GiB. Reducing it to 1% with `tune2fs -m 1` exposed about 36 GiB while
+  retaining about 9 GiB for root. Verify the mounted device, filesystem health,
+  and current reserve first; this changes allocation policy, not used bytes.
+- Run long maintenance under a named `systemd-run` service when the agent's
+  server may restart. On NixOS use `/run/current-system/sw/bin/bash` and set
+  `PATH=/run/current-system/sw/bin:/run/wrappers/bin`; `/bin/bash` may not exist
+  and the default service PATH may omit `sh`. Check the unit and journal before
+  restarting work: completed transient units can disappear. Use
+  `RemainAfterExit=yes` for a oneshot that launches a detached container, or
+  keep the container attached so systemd owns its actual lifetime.
+- If `sudo` on PATH reports a missing setuid bit, check the real NixOS wrapper
+  at `/run/wrappers/bin/sudo` before concluding privileged cleanup is unavailable.
+
 ## Step 3: Rust Build Artifact Cleanup
 
 Do not start with a blind `find ~ -name target` or with hard-coded roots that may miss worktrees. Inventory explicit `target/` directories first using the bundled helper and the machine-specific root list in `references/rust-target-roots.txt`.
@@ -115,9 +141,16 @@ Recommended sequence:
 3. For inactive repos, abandoned branches, and `.worktrees/*/target`, prefer guarded direct deletion of the explicit `target/` directory.
 4. Re-run the list command after each deletion round to show reclaimed space.
 
+On large JavaScript monorepos, the helper also traverses `node_modules`, `.git`,
+and nested `.repos` directories before printing results. On `ryzen-shine`, a
+full inventory spent over nine minutes in Paseo/T3 Code dependencies. Avoid
+overlapping full scans; use a shared snapshot or `du` to locate a large target,
+then validate that explicit path with the helper's dry-run `delete` command.
+
 Machine-specific note:
 
 - Project-local `.worktrees/*/target` directories are common cleanup wins on this machine and are easy to miss with the old hard-coded workflow.
+- Check `/proc/*/maps` as well as cwd, executable, and file-descriptor links before deleting Rust caches. On 2026-10-22, an already-removed Keepbook build shard still had proc-macro libraries mapped by `rust-analyzer`; an fd-only check missed them. Treat an absent shard as already removed, and do not count its historical size as newly reclaimed space.
 - `cargo-sweep` is installed through the NixOS `code.nix` package set, but stale manually-installed binaries under `~/.cargo/bin` can shadow `/run/current-system/sw/bin/cargo-sweep`. If `cargo sweep` fails with a missing loader or `No such file or directory`, run `type -a cargo-sweep` and remove the stale `~/.cargo/bin/cargo-sweep` entry.
 - `cargo-sweep sweep -i/--installed` can fail when `rustup toolchain list` contains stale toolchains whose `rustc` no longer exists. On this machine, `1.68.2-x86_64-unknown-linux-gnu` caused `failed to determine fingerprint ... 'rustc': No such file or directory`.
 - `/home/imalison/projects/codex/codex-rs/target` can be dominated by current-looking `target/debug/incremental` data that `cargo-sweep sweep -a` and `--maxsize` report as not removable. If it is stale and space pressure is high, use the guarded `rust_target_dirs.py delete ... --yes` workflow for that explicit target directory.
@@ -152,6 +185,16 @@ timeout 30s du -xh --max-depth=1 "$HOME/.local/share" 2>/dev/null | sort -h
 
 Machine-specific heavy hitters seen in practice:
 
+- 2026-10-08 `mac-demarco-mini`: kat's git-sync log reached 9,414,068,983
+  bytes. Booting out `user/501/org.nix-community.home.git-sync-rs`, compressing
+  the log on the Mac with `gzip -1`, and verifying decompressed size and SHA-256
+  preserved it in a 114,667,965-byte archive. Truncating the verified original
+  increased APFS free space from about 598 MiB to 9.3 GiB. Sample compression
+  before starting when little space remains; keep private logs on their source
+  machine unless cross-machine transfer is explicitly authorized. The running
+  watcher still used an old configuration containing Claude history, while the
+  updated dotfiles source had removed it; verify the loaded launchd job's actual
+  arguments, not just the current source module.
 - 2026-09-06 `mac-demarco-mini`: `~/Library/Logs/git-sync-rs.log` reached
   30.5 GiB and exhausted the shared APFS container, crashing Paseo with
   `ENOSPC`. The watcher repeatedly failed on missing Claude `plans` and
@@ -221,7 +264,12 @@ Machine-specific heavy hitters seen in practice:
   - 2026-08-02 runner-image cleanup: with no active job or open files, stale `nix-shell.*` scratch under `/private/var/lib/gitea-runner-external/cache/tmp` occupied 8.8 GiB. Boot out `org.nixos.gitea-runner-nix`, terminate any orphaned `mount-gitea-runner-storage` or job `log stream` processes that still reference the mount, clear only the validated temp contents, detach the exact device identified by the `runner.sparsebundle` block in `hdiutil info`, and run `hdiutil compact` before bootstrapping the runner again. Compaction reclaimed 18.3 GB of physical SSD space; verify both the mount and runner PID afterward.
   - 2026-08-02 external Paseo cleanup: `/Volumes/Extreme SSD/Projects/paseo/node_modules` consumed 70 GiB on ExFAT because its 1 MiB allocation units massively amplified a dependency tree of small files. After confirming the running Paseo app and daemon came from installed Nix paths and that no process or open file referenced the checkout, deleting that exact regenerable directory reclaimed 70 GiB. Long ExFAT deletions may outlive an `exec` yield while continuing under the session manager; locate and monitor the original `rm` PID to completion instead of starting a competing deletion.
 - 2026-08-05 `railbird-sf` remote cleanup (`/` at 100%, 109 MiB free → 86%, 124 GiB free): the three big reclaimable pools were podman image storage, agent worktrees, and Nix-store roots those worktrees pinned. `sudo -n podman system prune -a -f` reclaimed 31.5 GB (three 10.5 GB registry-tagged `railbird-full` images plus stale `org-agenda-api` tags — all re-pullable from `us-central1-docker.pkg.dev`; running kokoro/org-agenda-api containers kept their images). The validated worktree sweep over `~imalison/projects/{paseo,subtr-actor,rocket-sense,t3code}/.worktrees` removed ~60 clean worktrees (~85 GiB apparent; paseo `rebase-pr-*` worktrees are ~3 GiB each from node_modules) and skipped 13 with real uncommitted work. Rerunning `nix-collect-garbage -d` AFTER the worktree sweep freed 10.4 GiB vs 0.4 GiB before it — removed worktrees' `.direnv` profiles were the roots, so always GC again after a worktree purge. Left intact: 144 GiB of live k3s PVCs under `/var/lib/rancher/k3s/storage` (rocket-sense postgres + storage — application data, never deletable), gitea-runner `.gradle` (33 GiB, an Android CI job was actively running — Gradle/Kotlin daemons visible in `ps`), and `/tmp/paseo-*` agent caches. `journalctl --vacuum-size=500M` freed 0B (all 4 GiB was active journals). New failure pattern: `git worktree remove --force` can FAIL and leave an orphan when the checkout contains root-owned files (container-run `__pycache__`); the fix is `sudo rm -rf` of the verified-clean leftover, then `git worktree prune`.
-- On `mac-demarco-mini`, `sudo -n` requires a password for imalison and root SSH is denied, so privileged cleanup (root `nix-collect-garbage`, other users' caches, simulator runtime deletion) needs an interactive session; unprivileged `nix store gc` freed only 250 MiB. Remaining large admin-only candidates seen 2026-08-05: `AssetsV2` Apple Intelligence models ~21 GiB (system-managed, do not raw-delete), iOS simulator runtimes 16 GiB (18.4 + 26.5), kat's `.yarn` cache 6.3 GiB.
+- On `mac-demarco-mini`, imalison historically needed a password for `sudo -n`
+  and root SSH was denied. As verified 2026-10-08, `ssh kat@mac-demarco-mini`
+  has working passwordless sudo and can administer both users. Remaining large
+  admin-only candidates seen 2026-08-05: `AssetsV2` Apple Intelligence models
+  ~21 GiB (system-managed, do not raw-delete), iOS simulator runtimes 16 GiB
+  (18.4 + 26.5), kat's `.yarn` cache 6.3 GiB (already empty on 2026-10-08).
 - On macOS, `safe_ncdu scan` currently assumes Linux `findmnt` and cannot make a fresh snapshot. Use `ncdu -0 -x -c -o <snapshot>.json.zst /System/Volumes/Data`, then use `safe_ncdu top` with `zstdcat` available to query it.
 - `~/projects/*/target` directories can dominate home usage. Recent example candidates included stale `target/` directories under `scrobble-scrubber`, `http-client-vcr`, `http-client`, `subtr-actor`, `http-types`, `subtr-actor-py`, `sdk`, and `async-h1`.
 - 2026-05-26 cleanup: deleting explicit Cargo-backed targets under `~/projects/{keepbook,subtr-actor,rlru,rocket-sense,boxcars,rumno}` plus stale `subtr-actor/.worktrees/*/target` reclaimed about 65G by helper sizing and moved `/` from 100% used to 89% used. A final all-depth scan left no `~/projects` Rust `target/` directories over 500M.
@@ -238,6 +286,13 @@ Machine-specific heavy hitters seen in practice:
 - 2026-07-18 cleanup: `/var/lib/rancher` (4.7G) was orphaned state from a fully uninstalled `rancher-desktop`/`containerd`/`k3s` (all `systemctl is-enabled` returned `not-found`) — safe to `sudo rm -rf` outright, no service to stop first.
 - 2026-07-18 cleanup: root `/tmp` (not `$HOME/tmp`) had accumulated 9,450 `nix-shell.*` ephemeral TMPDIR dirs (4.6G, almost all empty) plus ~500 named agent/session scratch dirs (`codex-*`, `t3code-*`, `*-audit`, `*-validation-*`, installer `.dmg`s) totaling ~12G. Before bulk-deleting `/tmp`, cross-check `git worktree list` output for entries rooted in `/tmp` (a `railbird-mobile-rebase` worktree lived at `/tmp/railbird-mobile-rebase` in this run) and check `/proc/*/cwd` / `lsof +D /tmp` for live processes (found an active `rumno` service writing `rumno.pid`/`.out`/`.err`, and 730 small live `com.google.Chrome.*` sandbox dirs from running Chrome/Electron apps) — exclude those from the sweep. Some extracted scratch dirs (from `.asar` unpacking, tarball extraction) have read-only directory bits (`dr-xr-xr-x`, mtime epoch-0) that make plain `rm -rf` fail with `Permission denied`; `chmod -R u+rwX <dir>` before retrying `rm -rf` fixes it.
 - 2026-07-20 acute unblock: when manual shard deletion is unavailable, `systemctl --user start cargo-sweep-rust-targets.service` is a sanctioned first move — one run swept project `target/` dirs and freed 43G (`/` 100% -> 95%) in under a minute, without touching the 2-day `~/.cargo/build` window.
+- 2026-10-18 `jimi-hendnix` acute unblock (`/` 100%, 1001M free -> 85%, 134G free; **+133G**), entirely unprivileged because the agent shell had no sudo (setuid stripped, same as `railbird-sf`):
+  - Unprivileged `nix-store --gc` goes through the daemon and still works without sudo: 6,977 paths, 21.4 GiB, in about a minute. It's the fastest first move when `--print-dead` is non-zero.
+  - **The cargo-sweep timer can silently skip a huge stale target.** `keepbook/target` held 86.7G (`target/debug/deps` 60G, `incremental` 18G) with no file modified in 9 days, yet the 6-hourly `--time 2` sweep removed nothing and `rust_target_dirs.py list` reported age `0d`. The helper's age uses the target directory's own mtime, not recursive file freshness (verified in its source on 2026-10-22). Check `find <target> -type f -newermt '-2 days' | wc -l` for real write activity; with zero writes and no `/proc/*/fd` references, the guarded `delete --yes` was safe and reclaimed the full 86.7G.
+  - A `/tmp/rmk-bughunt.*` dir mixed build subdirs with irreplaceable repro material (`README.md`, `reproduce.sh`, crate copies, `capacities*.toml`). List each scratch dir's top level and delete only the large build subdirs instead of the whole dir. The other `/tmp/rmk-judgment-*-build` and `moergo-rmk-*-cargo` dirs were pure Cargo output (`CACHEDIR.TAG`, `debug/`) and went entirely.
+  - `bc` isn't on PATH, and zsh mangles multi-field `printf` loops. Run survey loops under `bash -c` with integer `du -m`.
+  - `~/projects/paseo/.worktrees`: these may be Paseo-registered workspaces, so keep the worktrees and drop only their dependencies. Run `git -C <wt> clean -fdxq -- <each node_modules path>` (8–10 per worktree in the monorepo). With user approval, doing this in 13 clean worktrees whose last commit was 34+ days old freed 43G of measured `df` space against 44.8G apparent. Paseo uses npm, not pnpm, so nearly nothing is hard-link shared and the reclaim matches `du`. `assembled-voice` is detached on a commit no ref contains, so it's reflog-only.
+- 2026-10-20 `jimi-hendnix` zero-free-space failure mode inside Claude Code: with `/` at 100% (83M free), **every Bash tool call failed before running anything** (even `mkdir`), because the harness captures stdout under `/tmp/claude-1000/<project>/<session>/tasks/` and the ENOSPC write aborted the call. `run_in_background` and T3 `delegate_task` (returned `parent_not_active`) did not help either. Reads still worked, so a bare `df -h /tmp` eventually got through once a few MB freed up. The unblock was the unprivileged `nix-store --gc` (no sudo in the agent shell): 13,902 dead paths, 39.2 GiB, `/` 100% -> 95% (49G free) in under two minutes. `/tmp` itself was 12G and left untouched.
 - 2026-07-19 cleanup: inactive `/tmp/rmk-*`, `/tmp/glove80-*`, and `/tmp/codex-asar.*` build/extraction directories accumulated about 85G in one day. Before deleting these explicit top-level patterns, scan `/proc/*/{cwd,root,exe,fd/*}` for references and check the candidates for nested `.git` entries; with neither present, removing them reduced `/tmp` from 63G to 4.2G and restored 85G of filesystem headroom.
 - 2026-07-22 T3 Code review-worktree unblock: many detached `.worktrees/pr-*` checkouts each materialized about 2.7G of `node_modules` while repeated PR review cycles were running. After checking `/proc/*/cwd` and selecting only completed, inactive worktrees, `git -C <worktree> clean -fdx -- node_modules` on five explicit targets restored about 1.9G of physical space. Preserve source and foreign/active worktrees, and prefer relinking the repository's existing dependencies over creating another independent install.
 - 2026-07-24 T3 Code stack cleanup: deleting all 174 `node_modules` directories under `/home/imalison/src/t3code` (including workspace-local link farms) removed about 30.7G of apparent data but reclaimed only 1.7G of filesystem space because the large pnpm trees shared content/hard links. Enumerate exact paths first, verify `/proc/*/{cwd,maps,fd/*}` has no `node_modules` users, and use `git -C <worktree> clean -fdx -- <relative-node_modules-path>` for each validated path. The Nix package/system rebuild remained reproducible without repository-local dependencies.
@@ -256,6 +311,7 @@ Machine-specific heavy hitters seen in practice:
 - 2026-07-29 `~/.t3` (T3 Code desktop app) is 9.0G: `worktrees/` 5.4G and `userdata/logs/` 2.8G, of which `logs/provider/` is 2.6G across 332 per-session `<uuid>.log` files. Only ~45 files (377M) were older than 7 days. The app rotates `desktop.trace.ndjson.N` / `server.trace.ndjson.N` / `server-child.log.N` at 10M each. Check `ps` for a running T3 Code node process and scan `/proc/*/fd/*` before touching any of it; leave `userdata/secrets`, `attachments`, and `chats` alone entirely.
 
 - 2026-09-10 `railbird-sf` privileged easy-wins cleanup (`/` 89% used, 98G free -> 84%, 146G free; **+48G measured**). `podman system df` reported 61.88 GB reclaimable across 15 images while two containers were active; `sudo -n podman system prune -a -f` removed three unused images and actually reclaimed 31.52 GB, leaving both `kokoro` and `org-agenda-api` running. It still reported 30.36 GB reclaimable afterward, so do not promise the headline estimate or force-delete the remainder. `nix-store --gc --print-dead` found 2,690 paths / 10.77 GiB logical NAR size; `sudo -n nix-collect-garbage -d` removed two old system generations and 2,784 paths, reported 13.8 GiB freed, and produced a roughly 19.0 GB `df` delta. Active K3s/Rancher state was 151.1 GiB and intentionally untouched.
+- 2026-10-12 `railbird-sf` CI-failure triage (`/` 94%, 60G free -> 90%, 93G free; **+33G**). Railbird Mobile Android Build/Tests jobs failed intermittently: one with `java.io.IOException: No space left on device` in Gradle/CMake, others with logs silently stopping mid-Gradle (both concurrent jobs froze at the same second) and the step failing ~15 min later. The tell in the job logs is repeated `running auto-GC to free ~110-117G bytes` (nix `min-free` firing) that never recovers. Only 6G was dead: 445G of valid store vs a 305G runtime closure — the gap is build-time closures retained by `keep-outputs`/`keep-derivations` under ~70G-each system generations. `/var/lib/kubelet` (183G) double-counts the k3s local-path PVCs bind-mounted from `/var/lib/rancher/k3s/storage` (~148G real rocket-sense data). `podman system prune -a -f` reported 36G reclaimable but freed only 5.95G; `nix-collect-garbage -d` (dropping 8 system generations from the previous 3 days) freed 23.9 GiB. With no running job (only idle Gradle daemons under `gitea-runner`), both ran safely alongside CI.
 - 2026-09-05 `railbird-sf` unprivileged cleanup (`/` 95% used, 45G free -> 90%, 91G free; **+46G**). This host is a shared multi-user box and the agent shell has **no sudo** (`sudo must be owned by uid 0 and have the setuid bit set` — setuid is stripped in the agent's namespace), so the entire run was unprivileged. Establish that constraint first; it removes most of this skill's usual levers.
   - **Accounting gap to expect:** `df` said 812G used but readable dirs summed to ~526G. The missing ~286G is in other users' `0700` homes (`dean`, `wgester`, `kat`, `alex`, `ben`, `mike`, `railbird`, ...), which `du` silently reports as `4.0K` each. `ls -la /home` reveals them; `du` alone makes the box look far emptier than it is. Root-only `/var/lib/private`, `/root`, `/opt` behave the same way.
   - `du -xh --max-depth=1 /` produced **completely empty output** (all children unreadable). A per-directory `for d in nix var srv tmp ...; do du -xsh "/$d"; done` loop worked and is the right probe on a locked-down host.
@@ -359,7 +415,7 @@ Validated 2026-08-14 on `jimi-hendnix` for gitea-runner. When the user wants a s
 
 ### `just switch` gotchas hit during that run
 
-- `safe_switch` retains a completed tmux pane for inspection, but the next invocation removes that completed session before starting a new switch. If a switch seems stale, check `tmux -L nixos-switch list-panes -t switch -F '#{pane_pid} #{pane_dead}'`; `pane_dead=1` means the old run finished and should be replaced automatically. Always verify with `readlink /run/current-system` plus a `systemctl is-enabled` check rather than trusting log output alone.
+- If a switch's output was lost, read it with `just switch-log` and verify with `readlink /run/current-system` plus a `systemctl is-enabled` check rather than trusting log output alone.
 - `/boot` on this host is deliberately kept `ro` by another workflow (the journal shows a `mount -o remount,rw /boot` immediately followed by `remount,ro`). `switch-to-configuration` then fails with `OSError: [Errno 30] Read-only file system: '/boot/loader/entries/...'` and `Failed to install bootloader` **after** the config has already built. Before assuming corruption, check `dmesg` for `fat-fs`/device errors against the actual `/boot` device — in this run the I/O errors were all on `sdd`/`sdc3` (removable rescue media), and boot-time `systemd-fsck` reported `/dev/nvme1n1p1` clean. Remount rw, re-run the switch, then restore `ro` to leave the machine as found.
 
 ## Safety Rules

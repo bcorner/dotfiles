@@ -15,6 +15,16 @@
       command = "${lib.getExe cfg.computerUseLinuxPackage}"
       args = ["mcp"]
     ''}
+    ${lib.optionalString (cfg.cuaDriverPackage != null) ''
+      [mcp_servers.cua-driver]
+      command = "${lib.getExe cfg.cuaDriverPackage}"
+      args = ["mcp"]
+    ''}
+    ${lib.optionalString (cfg.gmessagesPackage != null) ''
+      [mcp_servers.gmessages]
+      command = "${lib.getExe' cfg.gmessagesPackage "gmessages"}"
+      args = ["mcp"]
+    ''}
   '';
 in {
   options.myModules.codexGeneratedSkills = {
@@ -66,6 +76,18 @@ in {
       type = lib.types.nullOr lib.types.package;
       default = null;
       description = "computer-use-linux package to register as a managed Codex MCP server.";
+    };
+
+    cuaDriverPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = "Cua Driver package to register as a managed Codex MCP server.";
+    };
+
+    gmessagesPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = "Google Messages bridge package whose read-only `gmessages mcp` is registered as a managed Codex MCP server.";
     };
   };
 
@@ -137,7 +159,7 @@ in {
       begin_marker="# BEGIN AUTO-GENERATED CODEX MACHINE STATE"
       end_marker="# END AUTO-GENERATED CODEX MACHINE STATE"
       rejected_project_prefixes=${lib.escapeShellArg (
-        if pkgs.stdenv.isDarwin
+        if pkgs.stdenv.hostPlatform.isDarwin
         then "/home/ /run/"
         else "/Users/ /Volumes/"
       )}

@@ -72,7 +72,6 @@
         keep-derivations = true;
         substituters = [
           "https://cache.nixos.org"
-          "https://cuda-maintainers.cachix.org"
           "https://ai.cachix.org"
           "https://cache.nixos-cuda.org"
           "https://nix-community.cachix.org"
@@ -85,7 +84,6 @@
         ];
         trusted-substituters = [
           "https://cache.nixos.org"
-          "https://cuda-maintainers.cachix.org"
           "https://ai.cachix.org"
           "https://cache.nixos-cuda.org"
           "https://nix-community.cachix.org"
@@ -97,7 +95,6 @@
           "https://paseo-colonelpanic8.cachix.org"
         ];
         trusted-public-keys = [
-          "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
           "ai.cachix.org-1:N9dzRK+alWwoKXQlnn0H6aUx0lU/mspIoz8hMvGvbbc="
           "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M="
           "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
@@ -125,33 +122,42 @@
           t3code =
             (import "${inputs.t3code-integration}/nix/package.nix" {
               buildCommit = inputs.t3code-integration.rev or "";
-              pkgs =
-                final
-                // {
-                  # The pinned Nix recipe selects 41, but the desktop app requires 43.
-                  electron_41 = final.electron_43;
-                };
+              pkgs = final;
               self = inputs.t3code-integration;
             }).client;
         })
         inputs.google-messages-bridge.overlays.default
         (final: prev: let
           unwrapped = prev.t3code.unwrapped;
+          # Electron names its libsecret safe-storage key after productName, so the
+          # Alpha -> Beta rebrand orphaned the key for the saved connection catalog.
+          adoptLegacySafeStorageKey = final.writeShellScript "t3code-adopt-legacy-safe-storage-key" ''
+            secret_tool=${final.libsecret}/bin/secret-tool
+            schema=chrome_libsecret_os_crypt_password_v2
+            lookup() {
+              ${final.coreutils}/bin/timeout 5 "$secret_tool" lookup xdg:schema "$schema" application "$1" 2>/dev/null
+            }
+            if ! lookup "T3 Code (Beta)" >/dev/null && legacy=$(lookup "T3 Code (Alpha)") && [ -n "$legacy" ]; then
+              printf %s "$legacy" | ${final.coreutils}/bin/timeout 5 "$secret_tool" store \
+                --label "Chromium Safe Storage" xdg:schema "$schema" application "T3 Code (Beta)" || true
+            fi
+          '';
         in {
           t3code = final.symlinkJoin {
             pname = "t3code-client";
             inherit (unwrapped) version meta;
             paths = [unwrapped];
-            nativeBuildInputs = [final.makeBinaryWrapper];
+            nativeBuildInputs = [final.makeBinaryWrapper final.makeShellWrapper];
             postBuild = ''
               for program in "$out/bin"/*; do
-                wrapProgram "$program" \
+                wrapProgramBinary "$program" \
                   --prefix PATH : "${final.lib.makeBinPath [final.codex final.gh final.git]}"
               done
               mv "$out/bin/t3code-desktop" \
                 "$out/bin/.t3code-desktop-client-unwrapped"
-              makeWrapper "$out/bin/.t3code-desktop-client-unwrapped" \
+              makeShellWrapper "$out/bin/.t3code-desktop-client-unwrapped" \
                 "$out/bin/t3code-desktop" \
+                --run ${adoptLegacySafeStorageKey} \
                 --add-flags "--password-store=gnome-libsecret" \
                 --add-flags "--backend-mode=client-only"
             '';
@@ -164,7 +170,9 @@
           claude-code = inputs.claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
           git-sync-rs = inputs.git-sync-rs.packages.${prev.stdenv.hostPlatform.system}.default;
           agent-workspace-linux = final.callPackage ./packages/agent-workspace-linux {};
-          computer-use-linux = final.callPackage ./packages/computer-use-linux {};
+          computer-use-linux = final.callPackage ./packages/computer-use-linux {
+            src = inputs.computer-use-linux;
+          };
           elegant-grub2-theme = final.callPackage ./packages/elegant-grub2-theme {};
           kef = final.callPackage ./packages/kef {};
           pykefcontrol = final.python3Packages.callPackage ./packages/pykefcontrol {};

@@ -203,6 +203,7 @@
   rlruPackages = inputs.rlru.packages.${pkgs.stdenv.hostPlatform.system};
   scrobbleScrubber = inputs.lastfm-edit.packages.${pkgs.stdenv.hostPlatform.system}.scrobble-scrubber;
   scrobbleScrubberApp = inputs.lastfm-edit.packages.${pkgs.stdenv.hostPlatform.system}.scrobble-scrubber-app;
+  movaDesktop = inputs.mova.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
   rlruDioxusDesktopBase = rlruPackages.rlru-dioxus-desktop.overrideAttrs (_: {
     # Rust 1.95 can otherwise ICE/SEGV while compiling rlru's desktop dependency
     # graph in release mode.
@@ -219,7 +220,9 @@
   enabledModule = makeEnable config "myModules.desktop" true {
     services.greenclip.enable = true;
     imports = [
+      inputs.cua-driver.nixosModules.cua-driver
       ./fonts.nix
+      ./eva.nix
       ./hyprland.nix
       ./keyd.nix
       ./mova-capture.nix
@@ -262,6 +265,11 @@
 
     services.gnome.at-spi2-core.enable = true;
 
+    services.cua-driver = {
+      enable = true;
+      package = inputs.cua-driver.packages.${pkgs.stdenv.hostPlatform.system}.cua-driver;
+    };
+
     services.gnome.gnome-keyring.enable = true;
 
     home-manager.users.imalison = lib.mkIf isFull {
@@ -274,6 +282,11 @@
         package = rlruDioxusDesktop;
         startInTray = true;
       };
+    };
+
+    home-manager.extraSpecialArgs.cuaDriverSkill = builtins.path {
+      path = "${inputs.cua-driver}/libs/cua-driver/rust/Skills/cua-driver";
+      name = "cua-driver-skill";
     };
 
     home-manager.sharedModules = [
@@ -352,7 +365,7 @@
             PartOf = ["graphical-session.target"];
           };
           Service = {
-            ExecStart = lib.getExe pkgs.hyprpolkitagent;
+            ExecStart = "${pkgs.hyprpolkitagent}/libexec/hyprpolkitagent";
             Restart = "on-failure";
             RestartSec = 2;
           };
@@ -422,6 +435,7 @@
         kdePackages.kleopatra
         libreoffice
         loupe
+        movaDesktop
         lxqt.lxqt-powermanagement
         kdePackages.okular
         quassel

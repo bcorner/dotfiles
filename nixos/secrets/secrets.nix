@@ -1,6 +1,7 @@
 let
-  keys = import ../keys.nix;
+  keys = import ../../nix-shared/keys.nix;
 in {
+  "rocket-sense.env.age".publicKeys = keys.agenixKeys ++ keys.railbird-sf;
   "dawarich-secret-key-base.age".publicKeys = keys.agenixKeys;
   "google-places-api-key.age".publicKeys = keys.agenixKeys;
   "gpg-keys.age".publicKeys = keys.agenixKeys;
@@ -34,8 +35,16 @@ in {
   # Optional Tailscale pre-auth key for unattended enrollment.
   # This is safe to commit encrypted; default plaintext is "DISABLED".
   "tailscale-authkey.age".publicKeys = keys.sshClientKeys;
+  "tailscale-authkey.alexanders-macbook-air.age".publicKeys = [keys.alexandersMacbookAirHostKey];
+  "tailscale-authkey.kats-macbook-neo.age".publicKeys = [keys.katsMacbookNeoHostKey] ++ keys.katKeys;
+  "t3code-managed-access-token.kats-macbook-neo.age".publicKeys = keys.sshClientKeys ++ keys.katKeys ++ [keys.katsMacbookNeoHostKey];
+  "t3code-managed-access-token.alexanders-macbook-air.age".publicKeys = keys.sshClientKeys ++ keys.alexKeys ++ [keys.alexandersMacbookAirHostKey];
   "paseo-password-environment.age".publicKeys = keys.agenixKeys;
   "paseo-password-environment.bencbox.age".publicKeys = keys.benKeys;
+  "t3code-managed-access-token.age".publicKeys = keys.agenixKeys;
+  "t3code-fleet-enrollment.age".publicKeys = keys.agenixKeys ++ keys.t3codeFleetEnrollmentRecipients;
+  "t3code-mobile-settings.age".publicKeys = keys.agenixKeys ++ keys.t3codeFleetEnrollmentRecipients;
+  "paseo-password-alexanders-macbook-air.age".publicKeys = keys.agenixKeys ++ keys.alexKeys ++ [keys.alexandersMacbookAirHostKey];
   "hermes-environment.age".publicKeys = keys.agenixKeys;
   "google-messages-bridge-api-token.age".publicKeys = keys.agenixKeys;
   "google-messages-bridge-storage-key.age".publicKeys = keys.agenixKeys;

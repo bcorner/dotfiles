@@ -3,7 +3,6 @@ set -euo pipefail
 
 model="${KEF_MODEL:-${KEF_SPEAKER_MODEL:-LS50WII}}"
 discovery_timeout="${KEF_DISCOVERY_TIMEOUT:-5}"
-wake_delay="${KEF_WAKE_DELAY:-3}"
 host="${KEF_HOST:-${KEF_IP:-${KEF_SPEAKER_IP:-}}}"
 
 kef_args=(--model "$model" --discovery-timeout "$discovery_timeout")
@@ -17,17 +16,28 @@ notify() {
   fi
 }
 
-kef "${kef_args[@]}" on
-sleep "$wake_delay"
+select_optical() {
+  local check source
 
-for _ in {1..10}; do
-  if kef "${kef_args[@]}" source optical >/dev/null; then
+  timeout --kill-after=2s 40s kef "${kef_args[@]}" on optical --timeout 30 || return 1
+
+  for ((check = 0; check < 3; check++)); do
+    sleep 1
+    source=$(timeout --kill-after=2s 10s kef "${kef_args[@]}" source) || return 1
+    [[ "$source" == optical ]] || return 1
+  done
+}
+
+for attempt in 1 2 3; do
+  if select_optical; then
     notify "Powered on and switched to optical"
     exit 0
   fi
-  sleep 1
+  printf 'kef-optical: attempt %s/3 failed to confirm optical input\n' "$attempt" >&2
+  if ((attempt < 3)); then
+    sleep 2
+  fi
 done
 
-notify "Powered on, but optical input switch failed"
-echo "kef-optical: powered on, but failed to switch to optical input" >&2
+notify "Could not activate optical input after 3 attempts"
 exit 1

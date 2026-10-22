@@ -33,6 +33,25 @@
     # desktop client below is useless without one to pair with.
     myModules.paseo.enable = lib.mkDefault true;
 
+    # Managed settings apply to every Claude config dir (~/.claude-dean etc.),
+    # so transcripts (our token-usage history) are never pruned.
+    environment.etc."claude-code/managed-settings.d/retention.json".text =
+      builtins.toJSON {cleanupPeriodDays = 100000;};
+
+    environment.etc."claude-code/managed-settings.d/browser-cleanup.json".text = builtins.toJSON {
+      hooks.Stop = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "${lib.getExe pkgs.python3} ${../dotfiles/lib/bin/agent-browser-cleanup}";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+    };
+
     programs.direnv = {
       enable = true;
       nix-direnv.enable = true;
@@ -64,7 +83,39 @@
     ];
 
     home-manager.users.imalison = lib.mkIf config.myModules.desktop.enable {
-      imports = lib.optional t3codeEnabled ../nix-shared/home-manager/t3code-keybindings.nix;
+      # The option only exists when the module is imported, so the settings
+      # must be gated the same way; mkIf alone still references the option.
+      imports = lib.optionals t3codeEnabled [
+        inputs.t3code-integration.homeManagerModules.t3code-client
+        {
+          programs.t3code-client = {
+            enable = true;
+            # The overlaid client already passes --backend-mode=client-only.
+            package = pkgs.t3code;
+            managedConnectionsFile = "/home/imalison/.config/t3code/managed-connections.json";
+            settings.sidebarV2LargeIcons = true;
+            settings.composerShortcutHints = "alt";
+            settings.followUpBehavior = "steer";
+            settings.environmentGroups = import ../nix-shared/t3code-environment-groups.nix;
+            # A client-only desktop has no primary environment to take
+            # keybindings from, so it needs its own copy of the managed set.
+            keybindings = builtins.fromJSON (builtins.readFile ../nix-shared/t3code-keybindings.json);
+          };
+          xdg.dataFile."applications/com.t3tools.T3Code.desktop" = {
+            force = true;
+            text = ''
+              [Desktop Entry]
+              Type=Application
+              Name=T3 Code (Nightly)
+              Exec=/etc/profiles/per-user/imalison/bin/t3code-desktop %U
+              Icon=t3code
+              StartupWMClass=com.t3tools.T3Code
+              MimeType=x-scheme-handler/t3code;
+              Categories=Development;IDE;
+            '';
+          };
+        }
+      ];
 
       programs.codex = {
         enable = true;
@@ -107,7 +158,6 @@
         opencode
         inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop
       ]
-      ++ lib.optional t3codeEnabled t3code
       ++ [
         # MCP
         github-mcp-server
@@ -188,8 +238,9 @@
         if pkgs.stdenv.hostPlatform.system == "x86_64-linux"
         then
           with pkgs; [
-            # purescript
-            purescript
+            (import ./packages/purescript-compat {
+              system = pkgs.stdenv.hostPlatform.system;
+            })
             # Broken
             # spago
           ]
