@@ -16,21 +16,12 @@
   hyprlockPackage = inputs.hyprlock.packages.${system}.default;
   xdgDesktopPortalHyprlandPackage = inputs.xdg-desktop-portal-hyprland.packages.${system}.default;
   baseHyprlandPackage =
-    (hyprlandInput.packages.${system}.hyprland.override {
+    hyprlandInput.packages.${system}.hyprland.override {
       stdenv = hyprlandStdenv;
       hyprland-guiutils = hyprlandInput.inputs.hyprland-guiutils.packages.${system}.default.override {
         stdenv = hyprlandStdenv;
       };
-    }).overrideAttrs (old: {
-      # The 0.56.2 release branch rejects glaze 8 even though main accepts it,
-      # while the release's own pinned nixpkgs already packages glaze 8.
-      postPatch =
-        (old.postPatch or "")
-        + ''
-          substituteInPlace CMakeLists.txt \
-            --replace-fail 'find_package(glaze 7...<8 QUIET)' 'find_package(glaze QUIET)'
-        '';
-    });
+    };
   hyprlandGcc16Overlay = final: prev: {
     hyprland = baseHyprlandPackage;
     hyprland-unwrapped = final.hyprland.override {wrapRuntimeDeps = false;};
@@ -76,13 +67,16 @@
       done < <(${pkgs.systemd}/bin/loginctl list-sessions --no-legend 2>/dev/null)
     fi
 
-    ${pkgs.systemd}/bin/systemctl --user stop \
+    # One unit per call: systemctl rejects the whole batch if any unit is
+    # not loaded (e.g. river-xmonad-session.target on hosts without river).
+    for unit in \
       hyprland-session.target \
       river-xmonad-session.target \
       graphical-session.target \
       graphical-session-pre.target \
-      tray.target \
-      2>/dev/null || true
+      tray.target; do
+      ${pkgs.systemd}/bin/systemctl --user stop "$unit" 2>/dev/null || true
+    done
 
     ${pkgs.systemd}/bin/systemctl --user unset-environment \
       WAYLAND_DISPLAY \
@@ -119,7 +113,7 @@
         rm -f "$out/bin/Hyprland"
         printf '%s\n' \
           '#!${pkgs.runtimeShell}' \
-          'exec ${pkgs.runtimeShell} "${package}/bin/Hyprland" "$@"' \
+          'exec "${package}/bin/Hyprland" "$@"' \
           > "$out/bin/Hyprland"
         chmod +x "$out/bin/Hyprland"
 

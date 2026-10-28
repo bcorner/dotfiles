@@ -5,13 +5,13 @@
     enable = true;
     nssmdns4 = true;
     nssmdns6 = true;
-    publish = {
-      enable = true;
-      domain = true;
-      workstation = true;
-      userServices = true;
-      addresses = true;
-      hinfo = true;
+    settings.publish = {
+      disable-publishing = false;
+      disable-user-service-publishing = false;
+      publish-domain = true;
+      publish-workstation = true;
+      publish-addresses = true;
+      publish-hinfo = true;
     };
     extraServiceFiles = {
       ssh = "''${pkgs.avahi}/etc/avahi/services/ssh.service";
@@ -24,6 +24,7 @@
       AllowAgentForwarding = true;
       AllowTcpForwarding = true;
       PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
       X11Forwarding = true;
     };
   };
